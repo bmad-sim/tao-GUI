@@ -1,0 +1,7 @@
+&tao_start
+  plot_file = ''
+/
+
+&tao_design_lattice
+  design_lattice(1)%file = "fodo.bmad"
+/
