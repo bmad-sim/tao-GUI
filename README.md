@@ -15,8 +15,8 @@ remembered between sessions; Window > Tile Windows lays them out again.
 - **Startup window:** when `tao-gui` is run with no arguments and there is no
   `tao.init` in the current directory, this is the only window that opens. Choose an
   init file and/or lattice file, the working directory, other input files (plot,
-  data, variable, beam, startup) and options (no plotting, skip startup file, no
-  radiation integrals, no smooth-line calc, RF on, debug, extra Tao arguments). It
+  data, variable, beam, startup) and options (plotting, run startup file, radiation
+  integrals, smooth-line calc, RF on, debug, extra Tao arguments). It
   shows the Tao command line it will use and keeps a list of recent startups. The
   other windows open once Tao has started; if Tao reports an error, the startup
   window stays open with the message. File > Open brings it back to reinitialize.

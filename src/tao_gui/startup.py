@@ -44,18 +44,30 @@ FILE_FIELDS = (
     ("startup_file", "Startup file", "-startup_file", "All files (*)"),
 )
 
-# (field, label, Tao flag or None, tooltip)
+# Options are named positively ("Plotting", not "No plotting"); the default
+# state is the StartupOptions field default.
+# (field, label, Tao flag when unchecked, Tao flag when checked, tooltip)
 OPTION_FIELDS = (
-    ("no_plot", "No plotting", None,
-     "Do not open plot windows. (Tao itself never opens its own plot window in the GUI.)"),
-    ("nostartup", "Skip startup file", "-nostartup", "Do not run the Tao startup command file"),
-    ("no_rad_int", "No radiation integrals", "-no_rad_int",
-     "Skip the radiation integrals calculation (faster for large rings)"),
-    ("disable_smooth_line_calc", "No smooth-line calc", "-disable_smooth_line_calc",
-     "Do not compute smooth curves for plots"),
-    ("rf_on", "RF on", "-rf_on", "Keep RF cavities on (Tao turns them off by default)"),
-    ("debug", "Debug", "-debug", "Tao debug mode"),
+    ("plotting", "Plotting", None, None,
+     "Open plot windows. (Tao itself never opens its own plot window in the GUI.)"),
+    ("run_startup", "Run startup file", "-nostartup", None,
+     "Run the Tao startup command file"),
+    ("rad_int", "Radiation integrals", "-no_rad_int", None,
+     "Compute the radiation integrals (uncheck to start large rings faster)"),
+    ("smooth_line_calc", "Smooth-line calc", "-disable_smooth_line_calc", None,
+     "Compute smooth curves for plots"),
+    ("rf_on", "RF on", None, "-rf_on", "Keep RF cavities on (Tao turns them off by default)"),
+    ("debug", "Debug", None, "-debug", "Tao debug mode"),
 )
+
+# Field names used before the options were made positive: old name -> new name.
+# The old fields meant the opposite, so their values are inverted.
+_OLD_NEGATIVE_FIELDS = {
+    "no_plot": "plotting",
+    "nostartup": "run_startup",
+    "no_rad_int": "rad_int",
+    "disable_smooth_line_calc": "smooth_line_calc",
+}
 
 
 @dataclass
@@ -68,10 +80,10 @@ class StartupOptions:
     var_file: str = ""
     beam_file: str = ""
     startup_file: str = ""
-    no_plot: bool = False
-    nostartup: bool = False
-    no_rad_int: bool = False
-    disable_smooth_line_calc: bool = False
+    plotting: bool = True
+    run_startup: bool = True
+    rad_int: bool = True
+    smooth_line_calc: bool = True
     rf_on: bool = False
     debug: bool = False
     extra_args: str = ""
@@ -83,8 +95,9 @@ class StartupOptions:
             value = getattr(self, name)
             if value:
                 args += [flag, self._rel(value)]
-        for name, _label, flag, _tip in OPTION_FIELDS:
-            if flag and getattr(self, name):
+        for name, _label, flag_off, flag_on, _tip in OPTION_FIELDS:
+            flag = flag_on if getattr(self, name) else flag_off
+            if flag:
                 args.append(flag)
         if self.extra_args.strip():
             args += shlex.split(self.extra_args)
@@ -129,6 +142,10 @@ class StartupOptions:
 
     @classmethod
     def from_dict(cls, data: Dict) -> "StartupOptions":
+        data = dict(data)
+        for old, new in _OLD_NEGATIVE_FIELDS.items():  # recent startups saved by older versions
+            if old in data and new not in data:
+                data[new] = not data.pop(old)
         names = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in names})
 
@@ -251,8 +268,10 @@ class StartupWindow(QWidget):
         options = QGroupBox("Options")
         grid = QGridLayout(options)
         self.options: Dict[str, QCheckBox] = {}
-        for i, (name, label, _flag, tip) in enumerate(OPTION_FIELDS):
+        defaults = StartupOptions()
+        for i, (name, label, _off, _on, tip) in enumerate(OPTION_FIELDS):
             box = QCheckBox(label)
+            box.setChecked(getattr(defaults, name))
             box.setToolTip(tip)
             box.toggled.connect(self._update)
             self.options[name] = box

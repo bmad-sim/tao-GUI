@@ -296,7 +296,7 @@ class TaoGui(QObject):
             self.add_plot_window(template)
 
     def set_plotting(self, on: bool) -> None:
-        """Turn plot windows on or off (the "No plotting" startup option)."""
+        """Turn plot windows on or off (the "Plotting" startup option)."""
         self.plotting = on
         for action in (self.act_new_plot, self.act_link_zoom, self.act_reset_zoom):
             action.setEnabled(on)
@@ -408,7 +408,7 @@ class TaoGui(QObject):
         if opts is not None:
             self.startup_options = opts
             self.startup.accept_started()
-            self.set_plotting(not opts.no_plot)
+            self.set_plotting(opts.plotting)
             self.show_windows()
         if output:
             self.console.append_lines(output)
