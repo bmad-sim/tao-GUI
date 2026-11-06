@@ -5,3 +5,41 @@
 &tao_design_lattice
   design_lattice(1)%file = "fodo.bmad"
 /
+
+!------------------------------------------------------------------------
+! Data: beta at the first QF and QD; target 12 m so the merit is nonzero.
+
+&tao_d2_data
+  d2_data%name = "twiss"
+  n_d1_data = 1
+/
+
+&tao_d1_data
+  ix_d1_data = 1
+  d1_data%name = "beta"
+  datum(1)%data_type = "beta.a"
+  datum(1)%ele_name = "1"
+  datum(1)%meas = 12
+  datum(1)%weight = 1
+  datum(2)%data_type = "beta.b"
+  datum(2)%ele_name = "5"
+  datum(2)%meas = 12
+  datum(2)%weight = 1
+/
+
+!------------------------------------------------------------------------
+! Variables: the two quad families.
+
+&tao_var
+  v1_var%name = "quad"
+  default_step = 1e-4
+  default_attribute = "k1"
+  default_weight = 1
+  ix_min_var = 1
+  var(1)%ele_name = "qf"
+  var(2)%ele_name = "qd"
+/
+
+&tao_params
+  global%opti_write_var_file = F
+/

@@ -7,19 +7,33 @@ Status: early development.
 
 ## Features
 
-- **Plots:** any Tao plot template (beta, orbit, floor_plan, …), drawn with matplotlib
-  from Tao's `pipe` data, with the lattice layout underneath s-based plots. Zoom and pan
-  with the toolbar. Plots redraw after every change to Tao's state. Add more panels
-  with View > Add plot panel.
-- **Lattice browser:** element table per branch, with a name or key filter
-  (wildcards `*` and `%`). Select an element to see its attributes; edit a value to
-  issue `set ele`.
-- **Console:** a Tao command line with history (Up/Down). Anything the GUI doesn't
-  have a widget for still works here.
+Each section is its own window, so you can arrange them across screens. Every
+window has the same menu bar (File, Tao, Plot, Window, Help), and the Window menu
+(Ctrl+1 … Ctrl+5) brings any section back. Window positions and the open plots are
+remembered between sessions; Window > Tile Windows lays them out again.
 
-Tao always runs inside the GUI process on one background thread, so the window stays
+- **Console** (main window): Tao command line with history (Up/Down). Anything the
+  GUI doesn't have a widget for still works here. Closing it quits.
+- **Plot windows:** any Tao plot template (beta, orbit, floor_plan, …), drawn with
+  matplotlib from Tao's `pipe` data, with the lattice layout under s-based plots.
+  Plot > New Plot Window adds more. Plots redraw after every change to Tao's state.
+  - Zooming one s-based plot zooms all of them (Plot > Link s-Axis Zoom; Ctrl+0
+    resets).
+  - Clicking a plot selects the element there; the selected element is shaded in
+    every plot.
+- **Lattice:** element table per branch, with a name or key filter (wildcards `*`
+  and `%`). Select an element to see its attributes; edit a value to issue `set ele`.
+- **Data:** d2/d1 tree and the datums of the chosen d1 array. Edit meas and weight,
+  toggle use, or apply use/veto/meas = model to the whole array.
+- **Variables:** v1 list and its variables. Edit model, meas and weight, toggle use,
+  or use/veto/model = design for the whole array.
+- **Optimizer:** choose the optimizer and cycles/loops, run it (Tao > Run Optimizer,
+  Ctrl+R), and see the merit and the `show merit` table.
+
+Tao always runs inside the GUI process on one background thread, so the windows stay
 responsive while Tao computes. Tao's own plot window is turned off
-(`-noplot -external_plotting`).
+(`-noplot -external_plotting`). While the optimizer runs, the windows respond, but
+Tao commands wait until it finishes.
 
 ## Install
 
@@ -49,7 +63,7 @@ pip install -e ".[test]"
 pytest
 ```
 
-The tests start Tao on the small FODO ring in `tests/files` and run headless
+The tests start Tao on the small FODO ring in `tests/files` (with two data and two variables) and run headless
 (`QT_QPA_PLATFORM=offscreen`).
 
 ### Layout
@@ -57,7 +71,10 @@ The tests start Tao on the small FODO ring in `tests/files` and run headless
 | Module | Role |
 | --- | --- |
 | `tao_worker.py` | `TaoClient`/`TaoWorker`: all Tao calls go through one worker thread |
-| `main_window.py` | Main window, menus, docks |
+| `application.py` | `TaoGui`: creates the windows, shared menus, selection and linked zoom |
+| `windows.py` | Top-level window classes |
 | `plots.py` | Plot panels (PyTao graph data → matplotlib) |
 | `lattice.py` | Element table and attribute editor |
+| `tables.py` | Data and variable browsers |
+| `optimizer.py` | Optimizer window |
 | `console.py` | Command console |

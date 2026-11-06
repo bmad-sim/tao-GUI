@@ -221,3 +221,6 @@ __marimo__/
 
 # Bmad digested lattice files
 *.digested*
+
+# Tao optimizer output
+var*.out
