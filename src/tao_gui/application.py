@@ -373,6 +373,18 @@ class TaoGui(QObject):
         for panel in self.plot_panels:
             panel.reset()
         self.client.start(opts.tao_command(), on_error=self._on_startup_failed)
+        # Explicit On/Off choices override the init file (see startup.py).
+        commands = opts.set_commands()
+        if commands:
+            def apply(tao):
+                return [(c, tao.cmd(c, raises=False)) for c in commands]
+
+            def echo(results):
+                for command, output in results:
+                    self._echo_command(command, output)
+
+            # Queued behind the start; fails harmlessly (TaoNotStarted) if the start fails.
+            self.client.call(apply, on_done=echo, on_error=lambda _msg: None, modifies=True)
 
     def _on_startup_failed(self, message: str) -> None:
         self._pending_startup = None
@@ -408,7 +420,7 @@ class TaoGui(QObject):
         if opts is not None:
             self.startup_options = opts
             self.startup.accept_started()
-            self.set_plotting(opts.plotting)
+            self.set_plotting(opts.effective("plotting"))
             self.show_windows()
         if output:
             self.console.append_lines(output)

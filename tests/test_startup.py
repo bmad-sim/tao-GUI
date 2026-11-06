@@ -95,14 +95,16 @@ def test_recent_startups(fresh_gui, qtbot):
     gui.startup.set_options(StartupOptions())
     gui.startup._on_recent(0)
     assert gui.startup.files["init_file"].text() == "tao.init"
-    assert not gui.startup.options["rad_int"].isChecked()
+    assert gui.startup.tri["rad_int"].value() is False
 
 
 def test_options_to_args():
     opts = StartupOptions(directory="/a/b", init_file="/a/b/tao.init", lattice_file="/c/l.bmad",
-                          run_startup=False, rf_on=True, plotting=False, extra_args="-reverse")
+                          run_startup=False, rf_on=True, plotting=False, rad_int=False,
+                          extra_args="-reverse")
     assert opts.tao_args() == ["-init_file", "tao.init", "-lattice_file", "/c/l.bmad",
-                               "-nostartup", "-rf_on", "-reverse"]
+                               "-no_rad_int", "-nostartup", "-reverse"]
+    assert opts.set_commands() == ["set global rad_int_user_calc_on = F", "set global rf_on = T"]
 
 
 def test_file_open_reuses_startup_window(gui, qtbot):
@@ -114,24 +116,62 @@ def test_file_open_reuses_startup_window(gui, qtbot):
     assert gui.windows["console"].isVisible()  # cancelling does not quit
 
 
-def test_options_are_positive_with_defaults(fresh_gui):
-    from tao_gui.startup import OPTION_FIELDS
+def test_option_labels_and_defaults(fresh_gui):
+    from tao_gui.startup import CHECK_OPTIONS, TRI_OPTIONS
 
-    boxes = fresh_gui.startup.options
-    for name, label, *_ in OPTION_FIELDS:
+    labels = [o.label for o in TRI_OPTIONS] + [c[1] for c in CHECK_OPTIONS]
+    for label in labels:
         assert not label.lower().startswith(("no ", "skip", "disable")), label
-    for name in ("plotting", "run_startup", "rad_int", "smooth_line_calc"):
-        assert boxes[name].isChecked(), name
-    for name in ("rf_on", "debug"):
-        assert not boxes[name].isChecked(), name
-    assert StartupOptions(init_file="a.init").tao_args() == ["-init_file", "a.init"]
-    assert StartupOptions(init_file="a.init", rad_int=False, smooth_line_calc=False).tao_args() == [
-        "-init_file", "a.init", "-no_rad_int", "-disable_smooth_line_calc"]
+    assert "Compute radiation integrals" in labels
+    startup = fresh_gui.startup
+    for opt in TRI_OPTIONS:  # all tri-state options start as "not set"
+        assert startup.tri[opt.name].value() is None
+    assert startup.checks["run_startup"].isChecked()
+    assert not startup.checks["debug"].isChecked()
+    opts = StartupOptions(init_file="a.init")
+    assert opts.tao_args() == ["-init_file", "a.init"] and opts.set_commands() == []
+
+
+def test_default_follows_init_file(fresh_gui, tmp_path):
+    (tmp_path / "rf.init").write_text(
+        "&tao_start\n  startup_file = 'my.startup'  ! comment\n/\n"
+        "&tao_design_lattice\n  design_lattice(1)%file = 'x.bmad'\n/\n"
+        "&tao_params\n  global%rf_on = F\n  global%disable_smooth_line_calc = .true.\n/\n")
+    (tmp_path / "x.bmad").write_text("")
+    startup = fresh_gui.startup
+    startup.set_options(StartupOptions(directory=str(tmp_path), init_file="rf.init"))
+    assert startup.tri["rf_on"].itemText(0) == "Default (off, rf.init)"
+    assert startup.tri["smooth_line_calc"].itemText(0) == "Default (off, rf.init)"
+    assert startup.tri["rad_int"].itemText(0) == "Default (on, Tao)"
+    assert startup.tri["plotting"].itemText(0) == "Default (on, Tao)"
+    assert startup.files["startup_file"].edit.placeholderText() == "my.startup (from rf.init)"
+    opts = startup.options_value()
+    assert opts.effective("rf_on") is False and opts.effective("rad_int") is True
+
+
+def test_explicit_choice_overrides_init_file(fresh_gui, qtbot, tmp_path):
+    import shutil
+
+    shutil.copy(FILES / "fodo.bmad", tmp_path)
+    (tmp_path / "rf.init").write_text(
+        "&tao_design_lattice\n  design_lattice(1)%file = 'fodo.bmad'\n/\n"
+        "&tao_params\n  global%rf_on = F\n  global%disable_smooth_line_calc = T\n/\n")
+    gui = fresh_gui
+    gui.startup.set_options(StartupOptions(directory=str(tmp_path), init_file="rf.init",
+                                           rf_on=True, smooth_line_calc=True))
+    assert "set global rf_on = T" in gui.startup.command_label.text()
+    start(qtbot, gui)
+    assert gui.client.is_running
+    box = {}
+    gui.client.call(lambda t: t.tao_global(), on_done=lambda g: box.setdefault("g", g))
+    qtbot.waitUntil(lambda: "g" in box, timeout=30_000)
+    assert box["g"]["rf_on"] is True
+    assert box["g"]["disable_smooth_line_calc"] is False
 
 
 def test_old_recent_entries_are_converted():
-    old = {"init_file": "a.init", "no_plot": True, "nostartup": False, "no_rad_int": True,
-           "disable_smooth_line_calc": False}
+    old = {"init_file": "a.init", "no_plot": True, "nostartup": False, "no_rad_int": False,
+           "disable_smooth_line_calc": False, "rf_on": False, "debug": False}
     opts = StartupOptions.from_dict(old)
-    assert (opts.plotting, opts.run_startup, opts.rad_int, opts.smooth_line_calc) == (
-        False, True, False, True)
+    assert (opts.plotting, opts.run_startup, opts.rad_int, opts.smooth_line_calc, opts.rf_on) == (
+        False, True, None, None, None)
