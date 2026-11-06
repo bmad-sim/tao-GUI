@@ -38,7 +38,7 @@ class SectionWindow(QMainWindow):
         if self.gui.closing:
             event.accept()
         elif self.key == "console":
-            event.ignore()
+            event.accept()  # closing the console quits the GUI
             self.gui.quit()
         elif self.key.startswith("plot"):
             event.accept()

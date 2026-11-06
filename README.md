@@ -12,6 +12,14 @@ window has the same menu bar (File, Tao, Plot, Window, Help), and the Window men
 (Ctrl+1 … Ctrl+5) brings any section back. Window positions and the open plots are
 remembered between sessions; Window > Tile Windows lays them out again.
 
+- **Startup window:** when `tao-gui` is run with no arguments and there is no
+  `tao.init` in the current directory, this is the only window that opens. Choose an
+  init file and/or lattice file, the working directory, other input files (plot,
+  data, variable, beam, startup) and options (no plotting, skip startup file, no
+  radiation integrals, no smooth-line calc, RF on, debug, extra Tao arguments). It
+  shows the Tao command line it will use and keeps a list of recent startups. The
+  other windows open once Tao has started; if Tao reports an error, the startup
+  window stays open with the message. File > Open brings it back to reinitialize.
 - **Console** (main window): Tao command line with history (Up/Down). Anything the
   GUI doesn't have a widget for still works here. Closing it quits.
 - **Plot windows:** any Tao plot template (beta, orbit, floor_plan, …), drawn with

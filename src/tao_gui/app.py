@@ -17,7 +17,8 @@ Starts the Tao GUI. Arguments are passed to Tao as on its command line, e.g.
     tao-gui -lattice_file my.bmad
 
 With no arguments, Tao is started if a tao.init file is in the current
-directory; otherwise use File > Open. Tao's own plot window is always off
+directory; otherwise a startup window opens where you choose the files and
+options (it is also File > Open). Tao's own plot window is always off
 (-noplot -external_plotting); the GUI draws the plots.
 """
 
@@ -41,11 +42,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     gui = TaoGui()
     app.aboutToQuit.connect(gui.shutdown)
     if args:
-        gui.start_tao(shlex.join(args))
+        # The GUI always runs Tao with -noplot; here it means "no plot windows".
+        gui.launch(shlex.join(args), plotting="-noplot" not in args)
     elif os.path.exists("tao.init"):
-        gui.start_tao("-init tao.init")
+        gui.launch("-init tao.init")
     else:
-        gui.console.append("No tao.init here. Use File > Open to start Tao.")
+        gui.show_startup()  # the only window until Tao starts
     return app.exec()
 
 
