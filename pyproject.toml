@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tao-gui"
+version = "0.1.0.dev0"
+description = "Qt desktop GUI for the Tao accelerator simulation program, built on PyTao"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "David Sagan" }]
+license = { text = "Apache-2.0" }
+dependencies = [
+  "pytao>=0.5",
+  "PySide6>=6.6",
+  "matplotlib>=3.7",
+  "numpy",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-qt"]
+
+[project.scripts]
+tao-gui = "tao_gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          channels: conda-forge
+          conda-remove-defaults: "true"
+          activate-environment: tao-gui
+          python-version: "3.12"
+
+      - name: Install Tao, PyTao and Qt (conda-forge)
+        run: conda install -y bmad pytao pyside6 matplotlib numpy pytest pytest-qt
+
+      - name: Install system libraries for headless Qt
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Install tao-gui
+        run: pip install --no-deps -e .
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -v
