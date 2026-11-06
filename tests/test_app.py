@@ -224,3 +224,51 @@ def test_worker_error_reaches_callback(gui, qtbot):
     gui.client.call(boom, on_error=errors.append)
     qtbot.waitUntil(lambda: bool(errors), timeout=10_000)
     assert errors == ["ValueError: boom"]
+
+
+# ----------------------------------------------------------------------
+# Plot window details
+
+
+def _graph_height(panel):
+    panel.canvas.draw()
+    return panel.figure.axes[0].get_window_extent().height
+
+
+def test_no_region_names_shown(gui):
+    for window in gui.plot_windows:
+        panel = window.panel
+        assert not panel.status.isVisible()
+        assert "region" not in window.windowTitle()
+
+
+def test_layout_strip_has_no_frame_or_grid(gui):
+    ax = gui.plot_panels[0].figure.axes[-1]  # the lattice layout
+    assert not any(spine.get_visible() for spine in ax.spines.values())
+    assert not any(line.get_visible() for line in ax.get_xgridlines())
+
+
+def test_toggling_layout_keeps_graph_height(gui, qtbot):
+    window = gui.plot_windows[0]
+    panel = window.panel
+    window.resize(900, 600)
+    qtbot.wait(100)
+    panel.refresh()
+    wait_idle(qtbot, gui.client)
+    qtbot.wait(100)
+    graph_before = _graph_height(panel)
+    height_before = window.height()
+
+    panel.layout_check.setChecked(False)
+    wait_idle(qtbot, gui.client)
+    qtbot.wait(100)
+    assert len(panel.figure.axes) == 1
+    assert window.height() < height_before
+    assert abs(_graph_height(panel) - graph_before) < 0.06 * graph_before
+
+    panel.layout_check.setChecked(True)
+    wait_idle(qtbot, gui.client)
+    qtbot.wait(100)
+    assert len(panel.figure.axes) == 2
+    assert abs(window.height() - height_before) <= 2
+    assert abs(_graph_height(panel) - graph_before) < 0.06 * graph_before
