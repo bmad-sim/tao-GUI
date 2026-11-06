@@ -278,3 +278,80 @@ def test_toggling_layout_keeps_graph_height(gui, qtbot):
     assert len(panel.figure.axes) == 2
     assert abs(window.height() - height_before) <= 2
     assert abs(_graph_height(panel) - graph_before) < 0.06 * graph_before
+
+
+# ----------------------------------------------------------------------
+# Parameter windows (double-click a datum or variable)
+
+
+def test_parse_pipe_parameters():
+    from tao_gui.details import parse_pipe_parameters
+
+    params = parse_pipe_parameters([
+        "data^merit_type;ENUM;T;target",
+        "meas_value;REAL;T;  1.200000000000000E+001",
+        "ix_d1;INT;F;1",
+        "good_user;LOGIC;T;F",
+    ])
+    assert [(p.name, p.settable, p.value) for p in params] == [
+        ("merit_type", True, "target"), ("meas_value", True, 12.0),
+        ("ix_d1", False, 1), ("good_user", True, False)]
+
+
+def test_double_click_datum_opens_parameters(gui, qtbot):
+    table = gui.data.table
+    assert not (table.editTriggers() & table.EditTrigger.DoubleClicked)
+    table.cellDoubleClicked.emit(1, column(table, "Element"))
+    window = gui.parameter_windows[("data", "1@twiss.beta[2]")]
+    qtbot.addWidget(window)
+    assert window.isVisible()
+    assert window.windowTitle() == "Datum: 1@twiss.beta[2]"
+    wait_idle(qtbot, gui.client)
+    names = [p.name for p in window.table.params]
+    assert {"data_type", "merit_type", "meas_value", "model_value", "weight", "s"} <= set(names)
+    data_type = table.item(1, column(table, "Data type")).text()
+    assert window.table.value_item("data_type").text() == data_type == "beta.b"
+    assert data_type in window.header.text()
+
+    # Read-only parameters cannot be edited; settable ones issue `set data`.
+    assert not window.table.value_item("model_value").flags() & Qt.ItemIsEditable
+    window.table.value_item("weight").setText("3")
+    wait_idle(qtbot, gui.client)
+    w = run_sync(qtbot, gui.client, lambda t: t.data_d_array("twiss", "beta", ix_uni=1)[1]["weight"])
+    assert w == 3
+    assert window.table.value_item("weight").text() == "3"
+    assert gui.data.table.item(1, column(gui.data.table, "Weight")).text() == "3"
+
+    window.table.value_item("good_user").setCheckState(Qt.Unchecked)
+    wait_idle(qtbot, gui.client)
+    good = run_sync(qtbot, gui.client, lambda t: t.data_d_array("twiss", "beta", ix_uni=1)[1]["good_user"])
+    assert good is False
+
+    # Double-clicking again raises the same window; closing removes it.
+    table.cellDoubleClicked.emit(1, 0)
+    assert len(gui.parameter_windows) == 1
+    window.close()
+    assert not gui.parameter_windows
+
+
+def test_double_click_variable_opens_parameters(gui, qtbot):
+    table = gui.variables.table
+    table.cellDoubleClicked.emit(0, 0)
+    window = gui.parameter_windows[("var", "quad[1]")]
+    qtbot.addWidget(window)
+    wait_idle(qtbot, gui.client)
+    assert window.windowTitle() == "Variable: quad[1]"
+    assert "QF[K1]" in window.header.text()
+    assert window.table.value_item("attrib_name").text() == "K1"
+
+    window.table.value_item("step").setText("2e-4")
+    wait_idle(qtbot, gui.client)
+    step = run_sync(qtbot, gui.client, lambda t: t.var("quad[1]")["step"])
+    assert abs(step - 2e-4) < 1e-15
+
+    # A value Tao rejects is put back and reported.
+    old = window.table.value_item("base_value").text()
+    window.table.value_item("base_value").setText("0.2")
+    wait_idle(qtbot, gui.client)
+    assert window.table.value_item("base_value").text() == old
+    assert "Tao rejected" in window.statusBar().currentMessage()
