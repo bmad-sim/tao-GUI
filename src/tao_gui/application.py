@@ -23,6 +23,7 @@ from .console import ConsoleWidget
 from .lattice import ElementRow, LatticeWidget
 from .optimizer import OptimizerWidget
 from .plots import PlotPanel
+from .startup import StartupOptions, StartupWindow
 from .tables import DataWidget, VariablesWidget
 from .tao_worker import TaoClient
 from .windows import PlotWindow, SectionWindow
@@ -50,6 +51,11 @@ class TaoGui(QObject):
     def __init__(self, client: Optional[TaoClient] = None, restore: bool = True) -> None:
         super().__init__()
         self.client = client or TaoClient(self)
+        self.restore = restore
+        self.plotting = True
+        self.windows_shown = False
+        self.startup_options: Optional[StartupOptions] = None
+        self._pending_startup: Optional[StartupOptions] = None
         self.templates: List[str] = []
         self.lattice_name = ""
         self.closing = False
@@ -88,7 +94,10 @@ class TaoGui(QObject):
         self.client.started.connect(self._on_started)
         self.client.error.connect(self._on_error)
 
-        self._restore(restore)
+        # Startup window (shown alone when there is nothing to start Tao with)
+        self.startup = StartupWindow()
+        self.startup.start_requested.connect(self._start_from_options)
+        self.startup.cancelled.connect(self._on_startup_cancelled)
 
     # ------------------------------------------------------------------
     # Actions and menus
@@ -105,8 +114,8 @@ class TaoGui(QObject):
 
     def _create_actions(self) -> None:
         a = self._action
-        self.act_open = a("&Open…", self.open_file_dialog, QKeySequence.Open,
-                          "Start Tao with a tao.init or lattice file")
+        self.act_open = a("&Open…", self.show_startup, QKeySequence.Open,
+                          "Choose the files and options to (re)start Tao with")
         self.act_reinit = a("&Reinitialize Tao", lambda: self.console.run_command("reinit tao"))
         self.act_write_lattice = a("&Write Lattice…", self.write_lattice_dialog,
                                    tip="Write the model lattice as a Bmad file")
@@ -245,13 +254,15 @@ class TaoGui(QObject):
 
     # ------------------------------------------------------------------
     # Persistence
-    def _restore(self, restore: bool) -> None:
+    def show_windows(self) -> None:
+        """Create the plot windows and show the section windows (once)."""
+        if self.windows_shown:
+            return
+        self.windows_shown = True
+        restore = self.restore
         settings = QSettings()
-        templates = settings.value("plots/templates") if restore else None
-        if isinstance(templates, str):
-            templates = [templates]
-        for template in templates or DEFAULT_TEMPLATES:
-            self.add_plot_window(template)
+        if self.plotting:
+            self._add_default_plots(settings.value("plots/templates") if restore else None)
 
         restored = False
         if restore and settings.contains("windows/console/geometry"):
@@ -278,6 +289,25 @@ class TaoGui(QObject):
         for window in self.plot_windows:
             window.show()
 
+    def _add_default_plots(self, templates=None) -> None:
+        if isinstance(templates, str):
+            templates = [templates]
+        for template in templates or DEFAULT_TEMPLATES:
+            self.add_plot_window(template)
+
+    def set_plotting(self, on: bool) -> None:
+        """Turn plot windows on or off (the "No plotting" startup option)."""
+        self.plotting = on
+        for action in (self.act_new_plot, self.act_link_zoom, self.act_reset_zoom):
+            action.setEnabled(on)
+        if not on:
+            for window in list(self.plot_windows):
+                window.close()
+        elif self.windows_shown and not self.plot_windows:
+            self._add_default_plots()
+            for window in self.plot_windows:
+                window.show()
+
     def save_window(self, window: SectionWindow) -> None:
         QSettings().setValue(f"windows/{window.key}/geometry", window.saveGeometry())
 
@@ -286,7 +316,8 @@ class TaoGui(QObject):
         for key, window in self.windows.items():
             settings.setValue(f"windows/{key}/geometry", window.saveGeometry())
         settings.setValue("windows/visible", [k for k, w in self.windows.items() if w.isVisible()])
-        settings.setValue("plots/templates", [p.template for p in self.plot_panels if p.template])
+        if self.plotting:  # keep the saved plots when this session had plotting off
+            settings.setValue("plots/templates", [p.template for p in self.plot_panels if p.template])
         for i, window in enumerate(w for w in self.plot_windows if w.panel.template):
             settings.setValue(f"plots/{i}/geometry", window.saveGeometry())
         settings.setValue("plots/link_zoom", self.act_link_zoom.isChecked())
@@ -298,6 +329,8 @@ class TaoGui(QObject):
         if save:
             self.save_settings()
         self.closing = True
+        self.startup.blockSignals(True)
+        self.startup.close()
         for window in list(self.windows.values()) + self.plot_windows:
             window.close()
         self.client.shutdown()
@@ -308,6 +341,12 @@ class TaoGui(QObject):
 
     # ------------------------------------------------------------------
     # Tao lifecycle
+    def launch(self, init: str, plotting: bool = True) -> None:
+        """Show the windows and start Tao (used when the command line says what to run)."""
+        self.set_plotting(plotting)
+        self.show_windows()
+        self.start_tao(init)
+
     def start_tao(self, init: str) -> None:
         """Start (or restart) Tao with a Tao command-line string."""
         self.console.append(f"Starting Tao: {init}", bold=True)
@@ -316,15 +355,35 @@ class TaoGui(QObject):
             panel.reset()
         self.client.start(init, on_error=self._on_start_failed)
 
-    def open_file_dialog(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self.windows["console"], "Open Tao init or lattice file", os.getcwd(),
-            "Tao init (*.init);;Bmad lattice (*.bmad *.lat);;All files (*)",
-        )
-        if path:
-            os.chdir(os.path.dirname(path))  # Tao resolves relative paths from the cwd
-            flag = "-init" if path.endswith(".init") else "-lattice_file"
-            self.start_tao(f"{flag} {shlex.quote(path)}")
+    def show_startup(self) -> None:
+        """Show the startup window (alone on first start; File > Open later)."""
+        if self.startup_options is not None:
+            self.startup.set_options(self.startup_options)
+        self.startup.set_tao_running(self.client.is_running)
+        self.startup.show()
+        self.startup.raise_()
+        self.startup.activateWindow()
+
+    def _start_from_options(self, opts: StartupOptions) -> None:
+        if opts.directory:
+            os.chdir(opts.directory)  # Tao resolves relative paths from the cwd
+        self._pending_startup = opts
+        self.console.append(f"Starting Tao: {opts.tao_command()}", bold=True)
+        self.lattice_label.setText("Starting Tao…")
+        for panel in self.plot_panels:
+            panel.reset()
+        self.client.start(opts.tao_command(), on_error=self._on_startup_failed)
+
+    def _on_startup_failed(self, message: str) -> None:
+        self._pending_startup = None
+        self.console.append(message, error=True)
+        self.lattice_label.setText("Tao failed to start" if not self.client.is_running
+                                   else self.lattice_name)
+        self.startup.show_error(message)
+
+    def _on_startup_cancelled(self) -> None:
+        if not self.windows_shown and not self.client.is_running:
+            self.quit()  # nothing else is open
 
     def write_lattice_dialog(self) -> None:
         if not self.client.is_running:
@@ -345,6 +404,12 @@ class TaoGui(QObject):
         self.console.append(message, error=True)
 
     def _on_started(self, output: list) -> None:
+        opts, self._pending_startup = self._pending_startup, None
+        if opts is not None:
+            self.startup_options = opts
+            self.startup.accept_started()
+            self.set_plotting(not opts.no_plot)
+            self.show_windows()
         if output:
             self.console.append_lines(output)
         self.selected = None
