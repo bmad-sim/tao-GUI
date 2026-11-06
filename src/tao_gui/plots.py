@@ -29,6 +29,9 @@ from PySide6.QtWidgets import (
 from .tao_worker import TaoClient, TaoWorker
 
 LAYOUT_TEMPLATE = "lat_layout"
+# Height of each graph and of the lattice layout strip, relative to each other.
+GRAPH_RATIO = 3
+LAYOUT_RATIO = 1
 SELECTION_COLOR = "#f5b041"
 
 Range = Tuple[float, float]
@@ -83,6 +86,15 @@ def _layout_graph(worker: TaoWorker, gm, layout_cls):
     return next((g for g in graphs if isinstance(g, layout_cls)), None)
 
 
+def style_layout_axes(ax) -> None:
+    """The lattice layout strip: no frame, no grid, no x ticks (element labels sit there)."""
+    ax.grid(False)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xlabel("")
+    ax.tick_params(axis="x", bottom=False, labelbottom=False)
+
+
 def draw_plot(figure: Figure, data: PlotData) -> list:
     """Draw ``data`` into ``figure`` (GUI thread). Returns the s-axes."""
     from pytao.plotting import mpl as tao_mpl
@@ -94,7 +106,7 @@ def draw_plot(figure: Figure, data: PlotData) -> list:
         return []
 
     s_plot = data.is_s_plot
-    ratios = [3] * len(graphs) + ([1] if data.layout is not None else [])
+    ratios = [GRAPH_RATIO] * len(graphs) + ([LAYOUT_RATIO] if data.layout is not None else [])
     axes = figure.subplots(len(ratios), 1, sharex=s_plot,
                            gridspec_kw={"height_ratios": ratios}, squeeze=False)[:, 0]
     for ax, graph in zip(axes, graphs):
@@ -104,13 +116,11 @@ def draw_plot(figure: Figure, data: PlotData) -> list:
             ax.text(0.5, 0.5, str(ex), ha="center", va="center", transform=ax.transAxes)
     if data.layout is not None:
         tao_mpl.plot(data.layout, axes[-1])
+        style_layout_axes(axes[-1])
         axes[-1].set_xlim(axes[0].get_xlim())
-        axes[-1].set_xlabel("")
-        axes[-1].tick_params(labelbottom=False)  # element labels sit there
     if s_plot:
         for ax in axes[: len(graphs)]:
             ax.tick_params(labelbottom=True)
-    figure.tight_layout()
     return list(axes) if s_plot else []
 
 
@@ -153,14 +163,19 @@ class PlotPanel(QWidget):
 
         self.layout_check = QCheckBox("Lattice layout")
         self.layout_check.setChecked(True)
-        self.layout_check.toggled.connect(lambda _on: self.refresh())
+        self.layout_check.toggled.connect(self._on_layout_toggled)
 
-        self.figure = Figure()
+        # "tight" re-fits the margins on every draw, including after a resize.
+        self.figure = Figure(layout="tight")
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.mpl_connect("button_press_event", self._on_click)
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         self.toolbar.setIconSize(QSize(18, 18))
-        self.status = QLabel()
+        self.status = QLabel()  # only shown for errors
+        self.status.setVisible(False)
+        self._has_layout = False  # the last drawing included the lattice layout
+        self._n_graphs = 0
+        self._resize_for_layout: Optional[int] = None  # canvas height when layout was toggled
 
         bar = QHBoxLayout()
         bar.addWidget(QLabel("Plot:"))
@@ -219,8 +234,31 @@ class PlotPanel(QWidget):
             on_error=self._on_error,
         )
 
+    def _on_layout_toggled(self, _on: bool) -> None:
+        self._resize_for_layout = self.canvas.height()
+        self.refresh()
+
+    def _keep_graph_height(self, has_layout: bool, n_graphs: int) -> None:
+        """After the layout was toggled, grow or shrink the window by the layout's
+        share so the graphs keep their height."""
+        start_height, self._resize_for_layout = self._resize_for_layout, None
+        if start_height is None or has_layout == self._has_layout or n_graphs == 0:
+            return
+        window = self.window()
+        if window is self or window.isMaximized() or window.isFullScreen():
+            return
+        graphs = GRAPH_RATIO * n_graphs
+        if has_layout:  # new height H' with graphs' share of H' equal to the old H
+            delta = round(start_height * LAYOUT_RATIO / graphs)
+        else:
+            delta = -round(start_height * LAYOUT_RATIO / (graphs + LAYOUT_RATIO))
+        window.resize(window.width(), window.height() + delta)
+
     def _on_data(self, data: PlotData) -> None:
         self.region = data.region
+        has_layout = data.layout is not None
+        self._keep_graph_height(has_layout, len(data.graphs))
+        self._has_layout, self._n_graphs = has_layout, len(data.graphs)
         self._drawing = True
         try:
             self.s_axes = draw_plot(self.figure, data)
@@ -236,7 +274,7 @@ class PlotPanel(QWidget):
         finally:
             self._drawing = False
         self.canvas.draw_idle()
-        self.status.setText(f"{self.template} in region {data.region}")
+        self.status.setVisible(False)
         self._done()
 
     def _on_error(self, message: str) -> None:
@@ -245,6 +283,8 @@ class PlotPanel(QWidget):
         self.figure.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
         self.canvas.draw_idle()
         self.status.setText(f"Could not plot {self.template!r}")
+        self.status.setVisible(True)
+        self._resize_for_layout = None
         self.region = None
         self._done()
 
