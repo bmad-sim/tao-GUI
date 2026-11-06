@@ -47,7 +47,9 @@ class ArrayTable(QTableWidget):
         self.rows: List[Dict[str, Any]] = []
         self.setHorizontalHeaderLabels([c.title for c in self.columns])
         self.verticalHeader().setVisible(False)
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        # Not ResizeToContents: that re-measures every column on each setItem,
+        # which makes refilling a 100-row table take seconds. Size once per load.
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.horizontalHeader().setStretchLastSection(True)
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self._loading = False
@@ -55,13 +57,18 @@ class ArrayTable(QTableWidget):
 
     def set_rows(self, rows: List[Dict[str, Any]]) -> None:
         self._loading = True
+        self.setUpdatesEnabled(False)
+        self.setSortingEnabled(False)
         try:
             self.rows = rows
+            self.clearContents()
             self.setRowCount(len(rows))
             for r, row in enumerate(rows):
                 for c, col in enumerate(self.columns):
                     self.setItem(r, c, self._make_item(col, row.get(col.key, "")))
+            self.resizeColumnsToContents()  # once per load
         finally:
+            self.setUpdatesEnabled(True)
             self._loading = False
 
     def _make_item(self, col: Column, value: Any) -> QTableWidgetItem:

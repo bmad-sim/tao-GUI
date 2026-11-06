@@ -140,16 +140,19 @@ class AttributeTable(QTableWidget):
         super().__init__(0, 3, parent)
         self.setHorizontalHeaderLabels(["Attribute", "Value", "Units"])
         self.verticalHeader().setVisible(False)
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        # Not ResizeToContents (re-measures on every setItem); size once per load.
+        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
         self._loading = False
         self.itemChanged.connect(self._on_item_changed)
 
     def set_attributes(self, attribs: Dict[str, Any]) -> None:
         self._loading = True
+        self.setUpdatesEnabled(False)
         try:
             names = [k for k in attribs if "#" not in k]
+            self.clearContents()
             self.setRowCount(len(names))
             for row, name in enumerate(names):
                 value = attribs[name]
@@ -162,7 +165,10 @@ class AttributeTable(QTableWidget):
                 self.setItem(row, 0, name_item)
                 self.setItem(row, 1, value_item)
                 self.setItem(row, 2, units_item)
+            self.resizeColumnToContents(0)
+            self.resizeColumnToContents(2)
         finally:
+            self.setUpdatesEnabled(True)
             self._loading = False
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
