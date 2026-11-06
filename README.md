@@ -37,6 +37,13 @@ Tao commands wait until it finishes.
 
 ## Install
 
+Get the code first; the install commands below are run from this checkout:
+
+```bash
+git clone https://github.com/bmad-sim/tao-GUI.git
+cd tao-GUI
+```
+
 Tao and PyTao are easiest to get from conda-forge:
 
 ```bash
@@ -46,7 +53,33 @@ pip install --no-deps -e .
 ```
 
 To use your own Tao build instead, set `ACC_ROOT_DIR` (PyTao finds `libtao` in
-`$ACC_ROOT_DIR/production/lib`) and `pip install -e .` into an environment with PyTao.
+`$ACC_ROOT_DIR/production/lib`) and install into a Python environment that has
+PyTao, for example a venv:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e /path/to/pytao   # or: pip install pytao
+pip install -e .
+```
+
+### Where the `tao-gui` command comes from
+
+`pip install` creates the `tao-gui` command: `pyproject.toml` declares it under
+`[project.scripts]`, and pip writes a small launcher script into the environment's
+`bin` directory (`$CONDA_PREFIX/bin` for conda, `.venv/bin` for a venv). The shell
+finds it because activating the environment puts that `bin` directory on your
+`PATH`. So:
+
+- Activate the environment (`conda activate tao-gui` or `source .venv/bin/activate`)
+  in each new shell before running `tao-gui`.
+- Without activating, run the launcher by its full path, e.g.
+  `/path/to/tao-GUI/.venv/bin/tao-gui`, or run the package with that environment's
+  Python: `python -m tao_gui`.
+- `which tao-gui` shows which launcher the shell will use.
+
+With `-e` (editable install) the launcher runs the code in this checkout, so a
+`git pull` takes effect without reinstalling.
 
 ## Run
 
@@ -55,6 +88,9 @@ tao-gui -init tao.init           # any Tao command-line arguments
 tao-gui -lattice_file my.bmad
 tao-gui                          # uses ./tao.init if present, else File > Open
 ```
+
+Run it from the directory you would run Tao from: Tao resolves relative file
+names, such as those in `tao.init`, from the current directory.
 
 ## Develop
 
