@@ -242,6 +242,12 @@ def test_no_region_names_shown(gui):
         assert "region" not in window.windowTitle()
 
 
+def test_plot_window_title_is_just_the_plot(gui):
+    assert [w.windowTitle() for w in gui.plot_windows] == ["Plot: beta", "Plot: orbit"]
+    gui.plot_windows[1].panel.set_template("floor_plan")
+    assert gui.plot_windows[1].windowTitle() == "Plot: floor_plan"
+
+
 def test_layout_strip_has_no_frame_or_grid(gui):
     ax = gui.plot_panels[0].figure.axes[-1]  # the lattice layout
     assert not any(spine.get_visible() for spine in ax.spines.values())

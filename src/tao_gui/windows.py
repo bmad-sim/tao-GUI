@@ -53,14 +53,10 @@ class PlotWindow(SectionWindow):
         super().__init__(gui, key, "Plot", panel)
         self.panel = panel
         panel.template_changed.connect(lambda _name: self._retitle())
-        self._lattice = ""
         self._retitle()
 
     def set_lattice_name(self, lattice: str) -> None:
-        self._lattice = lattice
-        self._retitle()
+        """Plot window titles show only the plot (lattice names are often blank)."""
 
     def _retitle(self) -> None:
-        name = self.panel.template or "(choose a template)"
-        title = f"Plot: {name}"
-        self.setWindowTitle(f"{title} — {self._lattice}" if self._lattice else title)
+        self.setWindowTitle(f"Plot: {self.panel.template or '(choose a template)'}")
