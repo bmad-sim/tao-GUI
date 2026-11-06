@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -172,6 +173,10 @@ class StartupOptions:
     def tao_args(self) -> List[str]:
         """Tao command-line arguments (file paths relative to ``directory``)."""
         args: List[str] = []
+        if self.uses_directory_init():
+            # Tao would read ./tao.init on its own, but pytao requires an explicit
+            # -init_file or -lattice_file, so name it.
+            args += ["-init_file", "tao.init"]
         for name, _label, flag, _filter, _nml in FILE_FIELDS:
             value = getattr(self, name)
             if value:
@@ -202,6 +207,11 @@ class StartupOptions:
         return commands
 
     # -- Init-file defaults ----------------------------------------------
+    def uses_directory_init(self) -> bool:
+        """No init or lattice file given: start from tao.init in the working directory."""
+        return (not self.init_file and not self.lattice_file
+                and os.path.isfile(self._abs("tao.init")))
+
     def init_path(self) -> Optional[str]:
         """The init file Tao will read: the chosen one, or tao.init in the directory."""
         if self.init_file:
@@ -245,8 +255,9 @@ class StartupOptions:
     def problems(self) -> List[str]:
         """Reasons the options can't be used to start Tao (empty if OK)."""
         out = []
-        if not (self.init_file or self.lattice_file):
-            out.append("Choose an init file or a lattice file.")
+        if not (self.init_file or self.lattice_file or self.uses_directory_init()):
+            out.append("Choose an init file or a lattice file, or a working directory "
+                       "that has a tao.init.")
         if self.directory and not os.path.isdir(self.directory):
             out.append(f"Directory not found: {self.directory}")
         for name, label, _flag, _filter, _nml in FILE_FIELDS:
@@ -260,7 +271,8 @@ class StartupOptions:
         return out
 
     def label(self) -> str:
-        main = self.init_file or self.lattice_file
+        main = self.init_file or self.lattice_file or (
+            "tao.init" if self.uses_directory_init() else "")
         return f"{os.path.basename(main)} — {self.directory}" if main else self.directory
 
     @classmethod
@@ -340,7 +352,7 @@ class FileField(QWidget):
 
 
 class TriStateCombo(QComboBox):
-    """Default (shows what it resolves to) / On / Off."""
+    """Default / On / Off. Default = leave it to the init file (or Tao)."""
 
     changed = Signal()
 
@@ -356,9 +368,6 @@ class TriStateCombo(QComboBox):
 
     def set_value(self, value: Optional[bool]) -> None:
         self.setCurrentIndex({None: 0, True: 1, False: 2}[value])
-
-    def set_default_text(self, value: bool, source: str) -> None:
-        self.setItemText(0, f"Default ({'on' if value else 'off'}, {source})")
 
 
 class StartupWindow(QWidget):
@@ -398,9 +407,8 @@ class StartupWindow(QWidget):
         form.addRow("Init file:", self.files["init_file"])
         form.addRow("Lattice file:", self.files["lattice_file"])
         form.addRow("Working directory:", self.directory)
-        hint = QLabel("Give an init file, a lattice file, or both. Empty fields below use "
-                      "the init file's setting.")
-        hint.setWordWrap(True)
+        hint = QLabel("Give an init file, a lattice file, or a working directory with a tao.init.")
+        hint.setToolTip("Empty file fields below use the init file's setting, shown greyed.")
         hint.setEnabled(False)
         form.addRow("", hint)
         for name, label, _flag, _filter, _nml in FILE_FIELDS[2:]:
@@ -408,13 +416,29 @@ class StartupWindow(QWidget):
 
         options = QGroupBox("Options")
         options_form = QFormLayout(options)
+        # Tri-state options: label | Default/On/Off | what Tao does with no init file.
+        tri_grid = QGridLayout()
+        tri_grid.setHorizontalSpacing(16)
+        tri_grid.setColumnStretch(3, 1)  # empty column takes the spare width
+        header = QLabel("Default when\ninit file absent")
+        header.setAlignment(Qt.AlignCenter)
+        header.setToolTip("What Tao does for this option when no init file sets it.\n"
+                          "\"Default\" uses the init file's setting if it has one.")
+        tri_grid.addWidget(header, 0, 2)
         self.tri: Dict[str, TriStateCombo] = {}
-        for opt in TRI_OPTIONS:
+        self.tao_default_labels: Dict[str, QLabel] = {}
+        for row, opt in enumerate(TRI_OPTIONS, start=1):
             combo = TriStateCombo()
-            combo.setToolTip(opt.tip + "\nDefault: use the init file's setting, or Tao's.")
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)  # as wide as "Default"
             combo.changed.connect(self._update)
             self.tri[opt.name] = combo
-            options_form.addRow(f"{opt.label}:", combo)
+            default_label = QLabel("On" if opt.tao_default else "Off")
+            default_label.setAlignment(Qt.AlignCenter)
+            self.tao_default_labels[opt.name] = default_label
+            tri_grid.addWidget(QLabel(f"{opt.label}:"), row, 0)
+            tri_grid.addWidget(combo, row, 1)
+            tri_grid.addWidget(default_label, row, 2)
+        options_form.addRow(tri_grid)
         self.checks: Dict[str, QCheckBox] = {}
         check_row = QHBoxLayout()
         defaults = StartupOptions()
@@ -535,8 +559,14 @@ class StartupWindow(QWidget):
         init_name = os.path.basename(opts.init_path() or "") or "init file"
 
         # What "Default" means, per the init file.
-        for opt in TRI_OPTIONS:
-            self.tri[opt.name].set_default_text(*opts.default_value(opt, settings))
+        for opt in TRI_OPTIONS:  # say in the tooltip what "Default" gives with this init file
+            value, source = opts.default_value(opt, settings)
+            where = f"{source} sets it {'on' if value else 'off'}" if source != "Tao" else (
+                "the init file doesn't set it, so Tao's default applies")
+            self.tri[opt.name].setToolTip(f"{opt.tip}\nDefault: {where}.")
+        self.files["init_file"].edit.setPlaceholderText(
+            "tao.init (in the working directory)"
+            if not opts.lattice_file and os.path.isfile(opts._abs("tao.init")) else "")
         for name, _label, _flag, _filter, nml in FILE_FIELDS:
             if nml is None:
                 continue
