@@ -14,12 +14,21 @@ remembered between sessions; Window > Tile Windows lays them out again.
 
 - **Startup window:** when `tao-gui` is run with no arguments and there is no
   `tao.init` in the current directory, this is the only window that opens. Choose an
-  init file and/or lattice file, the working directory, other input files (plot,
-  data, variable, beam, startup) and options (no plotting, skip startup file, no
-  radiation integrals, no smooth-line calc, RF on, debug, extra Tao arguments). It
-  shows the Tao command line it will use and keeps a list of recent startups. The
-  other windows open once Tao has started; if Tao reports an error, the startup
-  window stays open with the message. File > Open brings it back to reinitialize.
+  init file and/or lattice file, the working directory, and the beam, data, variable,
+  startup and plot files. Empty file fields use the init file's setting, which is
+  shown greyed in the field.
+  - Options the init file can also set (Plotting, Compute radiation integrals,
+    Smooth-line calc, RF on) have three states: **Default**, **On** and **Off**.
+    Default leaves the choice to the init file (its `tao_params` namelist) or, if it
+    doesn't set it, to Tao's built-in default; the menu shows which, e.g.
+    "Default (off, tao.init)". On and Off override the init file: they are applied
+    with `set global …` right after Tao starts.
+  - Run startup file and Debug are plain checkboxes; there is also a field for extra
+    Tao arguments.
+  - The window shows the Tao command line it will use, and keeps a list of recent
+    startups. The other windows open once Tao has started; if Tao reports an error,
+    the startup window stays open with the message. File > Open brings it back to
+    reinitialize.
 - **Console** (main window): Tao command line with history (Up/Down). Anything the
   GUI doesn't have a widget for still works here. Closing it quits.
 - **Plot windows:** any Tao plot template (beta, orbit, floor_plan, …), drawn with
