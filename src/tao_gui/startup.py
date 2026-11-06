@@ -409,7 +409,7 @@ class StartupWindow(QWidget):
         # Tri-state options: label | Default/On/Off | what Tao does with no init file.
         tri_grid = QGridLayout()
         tri_grid.setColumnStretch(1, 1)
-        header = QLabel("Default without init file")
+        header = QLabel("Default when init file absent")
         header.setToolTip("What Tao does for this option when no init file sets it.\n"
                           "\"Default\" uses the init file's setting if it has one.")
         tri_grid.addWidget(header, 0, 2)
