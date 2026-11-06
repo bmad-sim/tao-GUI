@@ -408,8 +408,10 @@ class StartupWindow(QWidget):
         options_form = QFormLayout(options)
         # Tri-state options: label | Default/On/Off | what Tao does with no init file.
         tri_grid = QGridLayout()
-        tri_grid.setColumnStretch(1, 1)
-        header = QLabel("Default when init file absent")
+        tri_grid.setHorizontalSpacing(16)
+        tri_grid.setColumnStretch(3, 1)  # empty column takes the spare width
+        header = QLabel("Default when\ninit file absent")
+        header.setAlignment(Qt.AlignCenter)
         header.setToolTip("What Tao does for this option when no init file sets it.\n"
                           "\"Default\" uses the init file's setting if it has one.")
         tri_grid.addWidget(header, 0, 2)
@@ -417,6 +419,7 @@ class StartupWindow(QWidget):
         self.tao_default_labels: Dict[str, QLabel] = {}
         for row, opt in enumerate(TRI_OPTIONS, start=1):
             combo = TriStateCombo()
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)  # as wide as "Default"
             combo.changed.connect(self._update)
             self.tri[opt.name] = combo
             default_label = QLabel("On" if opt.tao_default else "Off")
