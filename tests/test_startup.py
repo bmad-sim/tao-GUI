@@ -24,6 +24,7 @@ def test_only_startup_window_opens(fresh_gui):
     assert not gui.plot_windows
     assert not gui.startup.start_button.isEnabled()  # nothing chosen yet
     assert "init file or a lattice file" in gui.startup.command_label.text()
+    assert "tao.init" in gui.startup.command_label.text()
 
 
 def test_start_from_init_file(fresh_gui, qtbot):
@@ -177,3 +178,22 @@ def test_old_recent_entries_are_converted():
     opts = StartupOptions.from_dict(old)
     assert (opts.plotting, opts.run_startup, opts.rad_int, opts.smooth_line_calc, opts.rf_on) == (
         False, True, None, None, None)
+
+
+def test_working_directory_with_tao_init_is_enough(fresh_gui, qtbot):
+    gui = fresh_gui
+    gui.show_startup()
+    gui.startup.set_options(StartupOptions(directory=str(FILES)))
+    assert gui.startup.start_button.isEnabled()
+    assert gui.startup.files["init_file"].edit.placeholderText().startswith("tao.init")
+    assert "-init_file tao.init" in gui.startup.command_label.text()
+    start(qtbot, gui)
+    assert gui.client.is_running
+    assert len(gui.lattice.model.rows) == 66
+
+
+def test_directory_without_tao_init_is_not_enough(fresh_gui, tmp_path):
+    gui = fresh_gui
+    gui.startup.set_options(StartupOptions(directory=str(tmp_path)))
+    assert not gui.startup.start_button.isEnabled()
+    assert StartupOptions(directory=str(tmp_path)).tao_args() == []

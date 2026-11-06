@@ -15,7 +15,8 @@ remembered between sessions; Window > Tile Windows lays them out again.
 - **Startup window:** when `tao-gui` is run with no arguments and there is no
   `tao.init` in the current directory, this is the only window that opens. Choose an
   init file and/or lattice file, the working directory, and the beam, data, variable,
-  startup and plot files. Empty file fields use the init file's setting, which is
+  startup and plot files. A working directory that has a `tao.init` is enough on its
+  own. Empty file fields use the init file's setting, which is
   shown greyed in the field.
   - Options the init file can also set (Plotting, Compute radiation integrals,
     Smooth-line calc, RF on) have three states: **Default**, **On** and **Off**.

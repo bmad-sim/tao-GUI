@@ -173,6 +173,10 @@ class StartupOptions:
     def tao_args(self) -> List[str]:
         """Tao command-line arguments (file paths relative to ``directory``)."""
         args: List[str] = []
+        if self.uses_directory_init():
+            # Tao would read ./tao.init on its own, but pytao requires an explicit
+            # -init_file or -lattice_file, so name it.
+            args += ["-init_file", "tao.init"]
         for name, _label, flag, _filter, _nml in FILE_FIELDS:
             value = getattr(self, name)
             if value:
@@ -203,6 +207,11 @@ class StartupOptions:
         return commands
 
     # -- Init-file defaults ----------------------------------------------
+    def uses_directory_init(self) -> bool:
+        """No init or lattice file given: start from tao.init in the working directory."""
+        return (not self.init_file and not self.lattice_file
+                and os.path.isfile(self._abs("tao.init")))
+
     def init_path(self) -> Optional[str]:
         """The init file Tao will read: the chosen one, or tao.init in the directory."""
         if self.init_file:
@@ -246,8 +255,9 @@ class StartupOptions:
     def problems(self) -> List[str]:
         """Reasons the options can't be used to start Tao (empty if OK)."""
         out = []
-        if not (self.init_file or self.lattice_file):
-            out.append("Choose an init file or a lattice file.")
+        if not (self.init_file or self.lattice_file or self.uses_directory_init()):
+            out.append("Choose an init file or a lattice file, or a working directory "
+                       "that has a tao.init.")
         if self.directory and not os.path.isdir(self.directory):
             out.append(f"Directory not found: {self.directory}")
         for name, label, _flag, _filter, _nml in FILE_FIELDS:
@@ -261,7 +271,8 @@ class StartupOptions:
         return out
 
     def label(self) -> str:
-        main = self.init_file or self.lattice_file
+        main = self.init_file or self.lattice_file or (
+            "tao.init" if self.uses_directory_init() else "")
         return f"{os.path.basename(main)} — {self.directory}" if main else self.directory
 
     @classmethod
@@ -396,9 +407,8 @@ class StartupWindow(QWidget):
         form.addRow("Init file:", self.files["init_file"])
         form.addRow("Lattice file:", self.files["lattice_file"])
         form.addRow("Working directory:", self.directory)
-        hint = QLabel("Give an init file, a lattice file, or both. Empty fields below use "
-                      "the init file's setting.")
-        hint.setWordWrap(True)
+        hint = QLabel("Give an init file, a lattice file, or a working directory with a tao.init.")
+        hint.setToolTip("Empty file fields below use the init file's setting, shown greyed.")
         hint.setEnabled(False)
         form.addRow("", hint)
         for name, label, _flag, _filter, _nml in FILE_FIELDS[2:]:
@@ -554,6 +564,9 @@ class StartupWindow(QWidget):
             where = f"{source} sets it {'on' if value else 'off'}" if source != "Tao" else (
                 "the init file doesn't set it, so Tao's default applies")
             self.tri[opt.name].setToolTip(f"{opt.tip}\nDefault: {where}.")
+        self.files["init_file"].edit.setPlaceholderText(
+            "tao.init (in the working directory)"
+            if not opts.lattice_file and os.path.isfile(opts._abs("tao.init")) else "")
         for name, _label, _flag, _filter, nml in FILE_FIELDS:
             if nml is None:
                 continue
