@@ -30,21 +30,22 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     from PySide6.QtWidgets import QApplication
 
-    from .main_window import MainWindow
+    from .application import TaoGui
 
     app = QApplication.instance() or QApplication([sys.argv[0]])
     app.setOrganizationName("bmad-sim")
     app.setApplicationName("tao-gui")
+    app.setQuitOnLastWindowClosed(False)  # the console window decides
     signal.signal(signal.SIGINT, signal.SIG_DFL)  # Ctrl-C in the terminal quits
 
-    window = MainWindow()
-    window.show()
+    gui = TaoGui()
+    app.aboutToQuit.connect(gui.shutdown)
     if args:
-        window.start_tao(shlex.join(args))
+        gui.start_tao(shlex.join(args))
     elif os.path.exists("tao.init"):
-        window.start_tao("-init tao.init")
+        gui.start_tao("-init tao.init")
     else:
-        window.console.append("No tao.init here. Use File > Open to start Tao.")
+        gui.console.append("No tao.init here. Use File > Open to start Tao.")
     return app.exec()
 
 

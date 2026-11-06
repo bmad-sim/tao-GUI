@@ -3,12 +3,16 @@
 Graph data comes from PyTao's plotting layer (``pytao.plotting``), which reads
 it from Tao with ``pipe`` commands. Each panel owns one Tao plot region and
 re-reads it whenever Tao's state changes.
+
+Panels showing plots against s ("s-plots") can share their s range (linked
+zoom), show the selected element as a shaded band, and report clicks so the
+clicked element can be selected.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
@@ -18,7 +22,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +29,9 @@ from PySide6.QtWidgets import (
 from .tao_worker import TaoClient, TaoWorker
 
 LAYOUT_TEMPLATE = "lat_layout"
+SELECTION_COLOR = "#f5b041"
+
+Range = Tuple[float, float]
 
 
 @dataclass
@@ -33,6 +39,10 @@ class PlotData:
     region: str
     graphs: List[Any] = field(default_factory=list)
     layout: Optional[Any] = None
+
+    @property
+    def is_s_plot(self) -> bool:
+        return bool(self.graphs) and all(getattr(g, "is_s_plot", False) for g in self.graphs)
 
 
 def fetch_plot(
@@ -55,15 +65,15 @@ def fetch_plot(
     else:
         graphs = gm.update_region(region_name=region, template_name=template)
 
-    layout = None
-    if include_layout and any(getattr(g, "is_s_plot", False) for g in graphs):
-        layout = _layout_graph(worker, gm, LatticeLayoutGraph)
-    return PlotData(region=region, graphs=graphs, layout=layout)
+    data = PlotData(region=region, graphs=graphs)
+    if include_layout and data.is_s_plot:
+        data.layout = _layout_graph(worker, gm, LatticeLayoutGraph)
+    return data
 
 
 def _layout_graph(worker: TaoWorker, gm, layout_cls):
     """The lattice layout graph, shared by all panels and re-read each time."""
-    region = getattr(worker, "layout_region", None)
+    region = worker.layout_region
     if region is not None:
         graphs = gm.update_region(region_name=region, template_name=LAYOUT_TEMPLATE)
     else:
@@ -73,18 +83,19 @@ def _layout_graph(worker: TaoWorker, gm, layout_cls):
     return next((g for g in graphs if isinstance(g, layout_cls)), None)
 
 
-def draw_plot(figure: Figure, data: PlotData) -> None:
-    """Draw ``data`` into ``figure`` (GUI thread)."""
+def draw_plot(figure: Figure, data: PlotData) -> list:
+    """Draw ``data`` into ``figure`` (GUI thread). Returns the s-axes."""
     from pytao.plotting import mpl as tao_mpl
 
     figure.clear()
     graphs = list(data.graphs)
     if not graphs:
         figure.text(0.5, 0.5, "No graphs to show", ha="center", va="center")
-        return
+        return []
 
+    s_plot = data.is_s_plot
     ratios = [3] * len(graphs) + ([1] if data.layout is not None else [])
-    axes = figure.subplots(len(ratios), 1, sharex=data.layout is not None,
+    axes = figure.subplots(len(ratios), 1, sharex=s_plot,
                            gridspec_kw={"height_ratios": ratios}, squeeze=False)[:, 0]
     for ax, graph in zip(axes, graphs):
         try:
@@ -96,24 +107,41 @@ def draw_plot(figure: Figure, data: PlotData) -> None:
         axes[-1].set_xlim(axes[0].get_xlim())
         axes[-1].set_xlabel("")
         axes[-1].tick_params(labelbottom=False)  # element labels sit there
-        for ax in axes[:-1]:
+    if s_plot:
+        for ax in axes[: len(graphs)]:
             ax.tick_params(labelbottom=True)
     figure.tight_layout()
+    return list(axes) if s_plot else []
 
 
 class PlotPanel(QWidget):
-    """One plot area showing a single Tao plot template."""
+    """One plot area showing a single Tao plot template.
 
-    close_requested = Signal(object)
+    Signals
+    -------
+    template_changed(str)
+    s_clicked(float)
+        The user clicked an s-plot at this s (not in zoom/pan mode).
+    s_range_changed(object)
+        The user changed the s range (zoom, pan, home): an (s0, s1) tuple.
+    """
 
-    def __init__(self, client: TaoClient, template: str = "", closable: bool = False,
-                 parent=None) -> None:
+    template_changed = Signal(str)
+    s_clicked = Signal(float)
+    s_range_changed = Signal(object)
+
+    def __init__(self, client: TaoClient, template: str = "", parent=None) -> None:
         super().__init__(parent)
         self.client = client
         self.template = template
         self.region: Optional[str] = None
+        self.s_axes: list = []
+        self.selection: Optional[Range] = None
+        self.user_s_range: Optional[Range] = None
+        self._selection_artists: list = []
         self._refresh_pending = False
         self._refreshing = False
+        self._drawing = False
 
         self.template_combo = QComboBox(editable=True)
         self.template_combo.setMinimumContentsLength(14)
@@ -127,8 +155,9 @@ class PlotPanel(QWidget):
         self.layout_check.setChecked(True)
         self.layout_check.toggled.connect(lambda _on: self.refresh())
 
-        self.figure = Figure(layout=None)
+        self.figure = Figure()
         self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.mpl_connect("button_press_event", self._on_click)
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         self.toolbar.setIconSize(QSize(18, 18))
         self.status = QLabel()
@@ -138,10 +167,6 @@ class PlotPanel(QWidget):
         bar.addWidget(self.template_combo)
         bar.addWidget(self.layout_check)
         bar.addWidget(self.toolbar, 1)
-        if closable:
-            close = QPushButton("Close")
-            close.clicked.connect(lambda: self.close_requested.emit(self))
-            bar.addWidget(close)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
@@ -151,6 +176,8 @@ class PlotPanel(QWidget):
 
         client.state_changed.connect(self.refresh)
 
+    # ------------------------------------------------------------------
+    # Template choice
     def set_templates(self, names: List[str]) -> None:
         current = self.template_combo.currentText()
         self.template_combo.blockSignals(True)
@@ -167,13 +194,17 @@ class PlotPanel(QWidget):
     def set_template(self, name: str) -> None:
         self.template = name
         self.region = None  # place the new template
+        self.user_s_range = None
         self.template_combo.setCurrentText(name)
+        self.template_changed.emit(name)
         self.refresh()
 
     def reset(self) -> None:
         """Forget the region after Tao is reinitialized."""
         self.region = None
 
+    # ------------------------------------------------------------------
+    # Data
     def refresh(self) -> None:
         if not self.template or not self.client.is_running:
             return
@@ -190,13 +221,27 @@ class PlotPanel(QWidget):
 
     def _on_data(self, data: PlotData) -> None:
         self.region = data.region
-        draw_plot(self.figure, data)
+        self._drawing = True
+        try:
+            self.s_axes = draw_plot(self.figure, data)
+            self._selection_artists = []
+            # Home (toolbar) goes to the full range; then restore the user's zoom.
+            self.toolbar.update()
+            self.toolbar.push_current()
+            if self.s_axes:
+                self.s_axes[0].callbacks.connect("xlim_changed", self._on_xlim_changed)
+                if self.user_s_range is not None:
+                    self.s_axes[0].set_xlim(self.user_s_range)
+                self._draw_selection()
+        finally:
+            self._drawing = False
         self.canvas.draw_idle()
         self.status.setText(f"{self.template} in region {data.region}")
         self._done()
 
     def _on_error(self, message: str) -> None:
         self.figure.clear()
+        self.s_axes = []
         self.figure.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
         self.canvas.draw_idle()
         self.status.setText(f"Could not plot {self.template!r}")
@@ -208,3 +253,65 @@ class PlotPanel(QWidget):
         if self._refresh_pending:
             self._refresh_pending = False
             self.refresh()
+
+    # ------------------------------------------------------------------
+    # s range (linked zoom)
+    @property
+    def is_s_plot(self) -> bool:
+        return bool(self.s_axes)
+
+    def s_range(self) -> Optional[Range]:
+        return tuple(self.s_axes[0].get_xlim()) if self.s_axes else None
+
+    def set_s_range(self, s_range: Optional[Range]) -> None:
+        """Show ``s_range`` (None: full range) without re-emitting it."""
+        self.user_s_range = s_range
+        if not self.s_axes:
+            return
+        self._drawing = True
+        try:
+            if s_range is None:
+                self.toolbar.home()
+            else:
+                self.s_axes[0].set_xlim(s_range)
+        finally:
+            self._drawing = False
+        self.canvas.draw_idle()
+
+    def _on_xlim_changed(self, ax) -> None:
+        if self._drawing:
+            return
+        self.user_s_range = tuple(ax.get_xlim())
+        self.s_range_changed.emit(self.user_s_range)
+
+    # ------------------------------------------------------------------
+    # Selection
+    def set_selection(self, s_range: Optional[Range]) -> None:
+        """Shade ``s_range`` (s_start, s_end) of the selected element."""
+        self.selection = s_range
+        if self.s_axes:
+            self._draw_selection()
+            self.canvas.draw_idle()
+
+    def _draw_selection(self) -> None:
+        for artist in self._selection_artists:
+            artist.remove()
+        self._selection_artists = []
+        if self.selection is None:
+            return
+        s0, s1 = self.selection
+        for ax in self.s_axes:
+            if s1 - s0 > 0:
+                artist = ax.axvspan(s0, s1, color=SELECTION_COLOR, alpha=0.35, zorder=0, lw=0)
+            else:
+                artist = ax.axvline(s0, color=SELECTION_COLOR, lw=2, zorder=0)
+            self._selection_artists.append(artist)
+
+    def _on_click(self, event) -> None:
+        if (
+            event.button == 1
+            and self.toolbar.mode == ""  # not zooming or panning
+            and event.inaxes in self.s_axes
+            and event.xdata is not None
+        ):
+            self.s_clicked.emit(float(event.xdata))

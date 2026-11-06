@@ -178,6 +178,8 @@ class LatticeWidget(QWidget):
     """Element table on top, attributes of the selected element below."""
 
     command_output = Signal(str, list)  # command echoed, Tao output
+    element_selected = Signal(int, int)  # branch, element index (user selection)
+    rows_loaded = Signal()
 
     def __init__(self, client: TaoClient, parent=None) -> None:
         super().__init__(parent)
@@ -275,16 +277,36 @@ class LatticeWidget(QWidget):
         else:
             self.header_label.clear()
             self.attributes.setRowCount(0)
+        self.rows_loaded.emit()
+
+    def row_for(self, ix: int) -> Optional[ElementRow]:
+        for row in self.model.rows:
+            if row.ix == ix:
+                return row
+        return None
+
+    def element_at(self, s: float) -> Optional[ElementRow]:
+        """The element whose [s_start, s] span contains ``s``, preferring ones with length."""
+        best = None
+        for row in self.model.rows:
+            if row.s - row.length <= s <= row.s:
+                if row.length > 0:
+                    return row
+                best = best or row
+        return best
 
     def select_element(self, ix: int) -> None:
-        """Select element ``ix`` (in the current branch) in the table."""
+        """Select element ``ix`` (in the current branch) in the table.
+
+        Does not emit ``element_selected``.
+        """
         for r, row in enumerate(self.model.rows):
             if row.ix == ix:
+                self.selected_ix = ix
                 proxy_index = self.proxy.mapFromSource(self.model.index(r, 0))
                 if proxy_index.isValid():
                     self.table.setCurrentIndex(proxy_index)
                     self.table.scrollTo(proxy_index)
-                self.selected_ix = ix
                 self._load_attributes()
                 return
 
@@ -295,6 +317,7 @@ class LatticeWidget(QWidget):
         if row.ix != self.selected_ix:
             self.selected_ix = row.ix
             self._load_attributes()
+            self.element_selected.emit(self.branch, row.ix)
 
     def _load_attributes(self) -> None:
         if self.selected_ix is None:
