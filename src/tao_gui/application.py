@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .console import ConsoleWidget
+from .details import ParameterWindow
 from .lattice import ElementRow, LatticeWidget
 from .optimizer import OptimizerWidget
 from .plots import PlotPanel
@@ -61,6 +62,7 @@ class TaoGui(QObject):
         self.closing = False
         self.selected: Optional[ElementRow] = None
         self.plot_windows: List[PlotWindow] = []
+        self.parameter_windows: Dict[tuple, ParameterWindow] = {}  # (kind, name) -> window
         self._plot_counter = 0
 
         # Section widgets
@@ -88,6 +90,8 @@ class TaoGui(QObject):
         self.console.exit_requested.connect(self.quit)
         for widget in (self.lattice, self.data, self.variables, self.optimizer):
             widget.command_output.connect(self._echo_command)
+        self.data.details_requested.connect(self.show_parameters)
+        self.variables.details_requested.connect(self.show_parameters)
         self.lattice.element_selected.connect(self._on_lattice_selection)
         self.lattice.rows_loaded.connect(self._reapply_selection)
         self.client.busy_changed.connect(self.busy_bar.setVisible)
@@ -171,6 +175,11 @@ class TaoGui(QObject):
             for window in self.plot_windows:
                 action = menu.addAction(window.windowTitle())
                 action.triggered.connect(window.show_and_raise)
+        if self.parameter_windows:
+            menu.addSeparator()
+            for window in self.parameter_windows.values():
+                action = menu.addAction(window.windowTitle())
+                action.triggered.connect(window.show_and_raise)
         menu.addSeparator()
         menu.addActions([self.act_tile, self.act_show_all])
 
@@ -228,6 +237,20 @@ class TaoGui(QObject):
     def remove_plot_window(self, window: PlotWindow) -> None:
         if window in self.plot_windows:
             self.plot_windows.remove(window)
+        window.deleteLater()
+
+    def show_parameters(self, kind: str, name: str) -> ParameterWindow:
+        """Open (or raise) the parameter window of a datum or variable."""
+        window = self.parameter_windows.get((kind, name))
+        if window is None:
+            window = ParameterWindow(self, self.client, kind, name)
+            window.command_output.connect(self._echo_command)
+            self.parameter_windows[(kind, name)] = window
+        window.show_and_raise()
+        return window
+
+    def remove_parameter_window(self, window: ParameterWindow) -> None:
+        self.parameter_windows.pop((window.kind, window.name), None)
         window.deleteLater()
 
     @property
@@ -331,7 +354,8 @@ class TaoGui(QObject):
         self.closing = True
         self.startup.blockSignals(True)
         self.startup.close()
-        for window in list(self.windows.values()) + self.plot_windows:
+        for window in (list(self.windows.values()) + self.plot_windows
+                       + list(self.parameter_windows.values())):
             window.close()
         self.client.shutdown()
 

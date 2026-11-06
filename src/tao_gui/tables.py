@@ -40,6 +40,7 @@ class ArrayTable(QTableWidget):
     """Rows of dicts; editable columns emit ``edited(row_index, column, text)``."""
 
     edited = Signal(int, object, str)
+    row_activated = Signal(int)  # double-clicked row
 
     def __init__(self, columns: Sequence[Column], parent=None) -> None:
         super().__init__(0, len(columns), parent)
@@ -52,6 +53,11 @@ class ArrayTable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.horizontalHeader().setStretchLastSection(True)
         self.setSelectionBehavior(QTableWidget.SelectRows)
+        # Double-click opens the row's parameter window, so it does not edit;
+        # edit a cell by clicking it once it is selected, or with F2.
+        self.setEditTriggers(QTableWidget.SelectedClicked | QTableWidget.EditKeyPressed)
+        self.cellDoubleClicked.connect(lambda row, _col: self.row_activated.emit(row))
+        self.setToolTip("Double-click a row to see all of its parameters")
         self._loading = False
         self.itemChanged.connect(self._on_item_changed)
 
@@ -107,8 +113,10 @@ class ArrayBrowser(QWidget):
     """Tree of arrays on the left, table of the chosen array on the right."""
 
     command_output = Signal(str, list)
+    details_requested = Signal(str, str)  # set kind ("data" / "var"), Tao name
 
     columns: Sequence[Column] = ()
+    set_kind = ""
 
     def __init__(self, client: TaoClient, parent=None) -> None:
         super().__init__(parent)
@@ -123,6 +131,7 @@ class ArrayBrowser(QWidget):
         self.title = QLabel()
         self.table = ArrayTable(self.columns)
         self.table.edited.connect(self._on_edited)
+        self.table.row_activated.connect(self.open_details)
 
         self.button_row = QHBoxLayout()
         for label, action in self.actions():
@@ -230,6 +239,11 @@ class ArrayBrowser(QWidget):
         row = self.table.rows[row_index]
         command = f"set {self.set_kind} {self.element_name(self.current, row)}|{col.set_name} = {text}"
         self._send(command)
+
+    def open_details(self, row_index: int) -> None:
+        if self.current is not None and 0 <= row_index < len(self.table.rows):
+            row = self.table.rows[row_index]
+            self.details_requested.emit(self.set_kind, self.element_name(self.current, row))
 
     def _run_action(self, action: Callable[[str], str]) -> None:
         if self.current is not None:

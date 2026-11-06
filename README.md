@@ -46,6 +46,10 @@ remembered between sessions; Window > Tile Windows lays them out again.
   toggle use, or apply use/veto/meas = model to the whole array.
 - **Variables:** v1 list and its variables. Edit model, meas and weight, toggle use,
   or use/veto/model = design for the whole array.
+- **Datum and variable parameters:** double-click a row in the Data or Variables
+  window to open a window with every parameter of that datum or variable. Parameters
+  Tao lets you set are editable (`set data` / `set var`); the rest are greyed out.
+  In the tables, edit a cell by clicking it once its row is selected, or with F2.
 - **Optimizer:** choose the optimizer and cycles/loops, run it (Tao > Run Optimizer,
   Ctrl+R), and see the merit and the `show merit` table.
 
@@ -131,5 +135,6 @@ The tests start Tao on the small FODO ring in `tests/files` (with two data and t
 | `plots.py` | Plot panels (PyTao graph data → matplotlib) |
 | `lattice.py` | Element table and attribute editor |
 | `tables.py` | Data and variable browsers |
+| `details.py` | Parameter window for one datum or variable |
 | `optimizer.py` | Optimizer window |
 | `console.py` | Command console |
