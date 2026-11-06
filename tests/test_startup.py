@@ -140,10 +140,12 @@ def test_default_follows_init_file(fresh_gui, tmp_path):
     (tmp_path / "x.bmad").write_text("")
     startup = fresh_gui.startup
     startup.set_options(StartupOptions(directory=str(tmp_path), init_file="rf.init"))
-    assert startup.tri["rf_on"].itemText(0) == "Default (off, rf.init)"
-    assert startup.tri["smooth_line_calc"].itemText(0) == "Default (off, rf.init)"
-    assert startup.tri["rad_int"].itemText(0) == "Default (on, Tao)"
-    assert startup.tri["plotting"].itemText(0) == "Default (on, Tao)"
+    for opt in ("rf_on", "smooth_line_calc", "rad_int", "plotting"):
+        assert startup.tri[opt].itemText(0) == "Default"
+        assert startup.tao_default_labels[opt].text() == "On"  # Tao's own defaults
+    assert "rf.init sets it off" in startup.tri["rf_on"].toolTip()
+    assert "rf.init sets it off" in startup.tri["smooth_line_calc"].toolTip()
+    assert "doesn't set it" in startup.tri["rad_int"].toolTip()
     assert startup.files["startup_file"].edit.placeholderText() == "my.startup (from rf.init)"
     opts = startup.options_value()
     assert opts.effective("rf_on") is False and opts.effective("rad_int") is True

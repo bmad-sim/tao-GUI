@@ -20,9 +20,10 @@ remembered between sessions; Window > Tile Windows lays them out again.
   - Options the init file can also set (Plotting, Compute radiation integrals,
     Smooth-line calc, RF on) have three states: **Default**, **On** and **Off**.
     Default leaves the choice to the init file (its `tao_params` namelist) or, if it
-    doesn't set it, to Tao's built-in default; the menu shows which, e.g.
-    "Default (off, tao.init)". On and Off override the init file: they are applied
-    with `set global …` right after Tao starts.
+    doesn't set it, to Tao's built-in default, which the "Default without init file"
+    column shows. Hover over a menu to see whether the init file sets it. On and Off
+    override the init file: they are applied with `set global …` right after Tao
+    starts.
   - Run startup file and Debug are plain checkboxes; there is also a field for extra
     Tao arguments.
   - The window shows the Tao command line it will use, and keeps a list of recent

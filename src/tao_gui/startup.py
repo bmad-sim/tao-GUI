@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -340,7 +341,7 @@ class FileField(QWidget):
 
 
 class TriStateCombo(QComboBox):
-    """Default (shows what it resolves to) / On / Off."""
+    """Default / On / Off. Default = leave it to the init file (or Tao)."""
 
     changed = Signal()
 
@@ -356,9 +357,6 @@ class TriStateCombo(QComboBox):
 
     def set_value(self, value: Optional[bool]) -> None:
         self.setCurrentIndex({None: 0, True: 1, False: 2}[value])
-
-    def set_default_text(self, value: bool, source: str) -> None:
-        self.setItemText(0, f"Default ({'on' if value else 'off'}, {source})")
 
 
 class StartupWindow(QWidget):
@@ -408,13 +406,26 @@ class StartupWindow(QWidget):
 
         options = QGroupBox("Options")
         options_form = QFormLayout(options)
+        # Tri-state options: label | Default/On/Off | what Tao does with no init file.
+        tri_grid = QGridLayout()
+        tri_grid.setColumnStretch(1, 1)
+        header = QLabel("Default without init file")
+        header.setToolTip("What Tao does for this option when no init file sets it.\n"
+                          "\"Default\" uses the init file's setting if it has one.")
+        tri_grid.addWidget(header, 0, 2)
         self.tri: Dict[str, TriStateCombo] = {}
-        for opt in TRI_OPTIONS:
+        self.tao_default_labels: Dict[str, QLabel] = {}
+        for row, opt in enumerate(TRI_OPTIONS, start=1):
             combo = TriStateCombo()
-            combo.setToolTip(opt.tip + "\nDefault: use the init file's setting, or Tao's.")
             combo.changed.connect(self._update)
             self.tri[opt.name] = combo
-            options_form.addRow(f"{opt.label}:", combo)
+            default_label = QLabel("On" if opt.tao_default else "Off")
+            default_label.setAlignment(Qt.AlignCenter)
+            self.tao_default_labels[opt.name] = default_label
+            tri_grid.addWidget(QLabel(f"{opt.label}:"), row, 0)
+            tri_grid.addWidget(combo, row, 1)
+            tri_grid.addWidget(default_label, row, 2)
+        options_form.addRow(tri_grid)
         self.checks: Dict[str, QCheckBox] = {}
         check_row = QHBoxLayout()
         defaults = StartupOptions()
@@ -535,8 +546,11 @@ class StartupWindow(QWidget):
         init_name = os.path.basename(opts.init_path() or "") or "init file"
 
         # What "Default" means, per the init file.
-        for opt in TRI_OPTIONS:
-            self.tri[opt.name].set_default_text(*opts.default_value(opt, settings))
+        for opt in TRI_OPTIONS:  # say in the tooltip what "Default" gives with this init file
+            value, source = opts.default_value(opt, settings)
+            where = f"{source} sets it {'on' if value else 'off'}" if source != "Tao" else (
+                "the init file doesn't set it, so Tao's default applies")
+            self.tri[opt.name].setToolTip(f"{opt.tip}\nDefault: {where}.")
         for name, _label, _flag, _filter, nml in FILE_FIELDS:
             if nml is None:
                 continue
