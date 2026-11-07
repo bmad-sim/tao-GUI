@@ -263,13 +263,15 @@ class TaoGui(QObject):
         window.show_and_raise()
         return window
 
-    def _on_floor_plan_click(self, branch: int, index: int) -> None:
-        """Clicking a floor-plan element opens its window and selects it everywhere."""
+    def _on_floor_plan_click(self, branch: int, index: int, open_window: bool) -> None:
+        """Clicking a floor-plan element selects it everywhere; shift-click also
+        opens its attribute window."""
         row = self.lattice.row_for(index) if branch == self.lattice.branch else None
         if row is not None:  # lords etc. are not in the Lattice window's table
             self.lattice.select_element(index)
             self._set_selected(row)
-        self.show_element(branch, index)
+        if open_window:
+            self.show_element(branch, index)
 
     def remove_parameter_window(self, window: ParameterWindow) -> None:
         self.parameter_windows.pop((window.kind, window.name), None)
@@ -498,12 +500,16 @@ class TaoGui(QObject):
     def _on_lattice_selection(self, _branch: int, ix: int) -> None:
         self._set_selected(self.lattice.row_for(ix))
 
-    def _on_plot_click(self, s: float) -> None:
+    def _on_plot_click(self, s: float, open_window: bool = False) -> None:
+        """Clicking an s-plot selects the element at s; shift-clicking a lattice
+        layout also opens its attribute window."""
         row = self.lattice.element_at(s)
         if row is None:
             return
         self.lattice.select_element(row.ix)
         self._set_selected(row)
+        if open_window:
+            self.show_element(self.lattice.branch, row.ix)
 
     def _reapply_selection(self) -> None:
         if self.selected is not None:

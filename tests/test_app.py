@@ -142,6 +142,7 @@ def test_plot_click_selects_element(gui, qtbot):
     wait_idle(qtbot, gui.client)
     assert gui.selected is not None and gui.selected.ix == QF
     assert gui.lattice.selected_ix == QF
+    assert not gui.parameter_windows  # a plain click opens no element window
 
 
 def test_linked_zoom(gui):
@@ -468,7 +469,7 @@ def test_floor_plan_window_is_trimmed_to_fit(gui, qtbot):
     assert window.width() == 760
 
 
-def test_floor_plan_click_opens_element_window(gui, qtbot):
+def test_floor_plan_shift_click_opens_element_window(gui, qtbot):
     from PySide6.QtCore import QPoint
     from PySide6.QtTest import QTest
 
@@ -485,10 +486,13 @@ def test_floor_plan_click_opens_element_window(gui, qtbot):
     assert hits.element_at(x, y) == (0, QF)
     assert hits.element_at(x + 200, y + 200) is None  # empty space inside the ring
 
-    # A real mouse click at the element (Qt's y runs down; matplotlib's runs up).
+    # Real mouse clicks at the element (Qt's y runs down; matplotlib's runs up).
     ratio = panel.canvas.devicePixelRatioF()
-    QTest.mouseClick(panel.canvas, Qt.LeftButton,
-                     pos=QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio)))
+    pos = QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio))
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, pos=pos)  # plain click: select only
+    assert gui.lattice.selected_ix == QF and gui.selected.ix == QF
+    assert ("ele", f"0>>{QF}") not in gui.parameter_windows
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos)  # shift-click: open
     element = gui.parameter_windows[("ele", f"0>>{QF}")]
     wait_idle(qtbot, gui.client)
     assert element.isVisible()
@@ -503,11 +507,10 @@ def test_floor_plan_click_opens_element_window(gui, qtbot):
     k1 = run_sync(qtbot, gui.client, lambda t: t.ele_gen_attribs(f"0>>{QF}")["K1"])
     assert abs(k1 - 0.32) < 1e-12
 
-    # In zoom mode a click does not select.
+    # In zoom mode a shift-click does nothing.
     element.close()
     panel.toolbar.zoom()
-    QTest.mouseClick(panel.canvas, Qt.LeftButton,
-                     pos=QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio)))
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos)
     assert ("ele", f"0>>{QF}") not in gui.parameter_windows
     panel.toolbar.zoom()
 
@@ -550,3 +553,34 @@ def test_call_command_file_with_history(gui, qtbot, tmp_path):
     items = [box.combo.itemText(i) for i in range(box.combo.count())]
     assert items == [f"{first} 0.33", f"{first} 0.34"]
     assert box.history() == items  # saved for the next session
+
+
+def test_layout_shift_click_opens_element_window(gui, qtbot):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    panel = gui.plot_panels[0]  # beta, with the lattice layout strip
+    strip, graph = panel._layout_axes[0], panel.s_axes[0]
+    assert strip is not graph
+    qf = gui.lattice.row_for(QF)
+    s_mid = qf.s - qf.length / 2
+    ratio = panel.canvas.devicePixelRatioF()
+
+    def pos(ax):
+        x, y = ax.transData.transform((s_mid, sum(ax.get_ylim()) / 2))
+        return QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio))
+
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, pos=pos(strip))  # plain: select only
+    assert gui.selected.ix == QF and not gui.parameter_windows
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos(graph))  # not a layout
+    assert not gui.parameter_windows
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos(strip))
+    assert ("ele", f"0>>{QF}") in gui.parameter_windows
+
+    # The lat_layout plot itself works the same way.
+    gui.parameter_windows[("ele", f"0>>{QF}")].close()
+    panel.set_template("lat_layout")
+    wait_idle(qtbot, gui.client)
+    assert panel._layout_axes == [panel.s_axes[0]]
+    QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos(panel.s_axes[0]))
+    assert ("ele", f"0>>{QF}") in gui.parameter_windows
