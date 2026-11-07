@@ -419,3 +419,26 @@ def fits(qtbot, window) -> bool:
         return False
     return all(table.columnWidth(c) >= table.sizeHintForColumn(c)
                for c in range(table.columnCount()))
+
+
+def test_layout_toggle_only_for_plots_with_layout(gui, qtbot):
+    panel = gui.plot_windows[0].panel
+    assert panel.template == "beta"
+    assert not panel.layout_check.isHidden()
+
+    panel.set_template("floor_plan")  # no lattice layout for a floor plan
+    wait_idle(qtbot, gui.client)
+    assert panel.layout_check.isHidden()
+
+    panel.set_template("lat_layout")  # is the layout: no second strip under it
+    wait_idle(qtbot, gui.client)
+    assert panel.layout_check.isHidden() and len(panel.figure.axes) == 1
+
+    panel.set_template("beta")
+    wait_idle(qtbot, gui.client)
+    assert not panel.layout_check.isHidden()
+
+    # Unticked, the toggle stays (so the layout can be turned back on).
+    panel.layout_check.setChecked(False)
+    wait_idle(qtbot, gui.client)
+    assert not panel.layout_check.isHidden() and len(panel.figure.axes) == 1
