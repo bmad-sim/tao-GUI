@@ -197,3 +197,40 @@ def test_directory_without_tao_init_is_not_enough(fresh_gui, tmp_path):
     gui.startup.set_options(StartupOptions(directory=str(tmp_path)))
     assert not gui.startup.start_button.isEnabled()
     assert StartupOptions(directory=str(tmp_path)).tao_args() == []
+
+
+def test_recent_has_no_duplicates(fresh_gui):
+    from tao_gui.startup import load_recent, save_recent
+
+    d = str(FILES)
+    save_recent(StartupOptions(directory=d, init_file="tao.init", rad_int=False))
+    save_recent(StartupOptions(directory=d, lattice_file="fodo.bmad"))
+    # Same files again: by absolute path, with a trailing slash, and with other options.
+    save_recent(StartupOptions(directory=d + os.sep, init_file=str(FILES / "tao.init"),
+                               rf_on=True))
+    recent = load_recent()
+    assert len(recent) == 2
+    assert recent[0].rf_on is True and recent[0].rad_int is None  # the latest one is kept
+    assert recent[1].lattice_file == "fodo.bmad"
+
+    # A working directory whose tao.init is used is the same startup as naming tao.init.
+    save_recent(StartupOptions(directory=d))
+    recent = load_recent()
+    assert len(recent) == 2 and recent[0].init_file == ""
+
+
+def test_saved_duplicates_are_dropped_on_load(fresh_gui):
+    import json
+
+    from PySide6.QtCore import QSettings
+
+    from tao_gui.startup import load_recent
+
+    d = str(FILES)
+    entries = [{"directory": d, "init_file": "tao.init", "rf_on": True},
+               {"directory": d, "init_file": "tao.init", "rf_on": False}]
+    QSettings().setValue("startup/recent", json.dumps(entries))
+    recent = load_recent()
+    assert len(recent) == 1 and recent[0].rf_on is True
+    fresh_gui.startup._load_recent()
+    assert fresh_gui.startup.recent_combo.count() == 1

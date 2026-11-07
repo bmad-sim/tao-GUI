@@ -270,6 +270,21 @@ class StartupOptions:
             out.append(f"Extra arguments: {ex}")
         return out
 
+    def recent_key(self) -> Tuple[str, ...]:
+        """Identifies a startup in the Recent list: the directory and the files used.
+
+        Options are not part of it, so starting the same files again replaces the
+        old entry. Paths are resolved, so "tao.init" given by name and found in the
+        directory, or a relative and an absolute path, count as the same.
+        """
+        def resolve(path: str) -> str:
+            return os.path.normcase(os.path.realpath(self._abs(path))) if path else ""
+
+        files = {name: getattr(self, name) for name, *_ in FILE_FIELDS}
+        if self.uses_directory_init():
+            files["init_file"] = "tao.init"
+        return (resolve(self.directory or "."), *(resolve(files[n]) for n in sorted(files)))
+
     def label(self) -> str:
         main = self.init_file or self.lattice_file or (
             "tao.init" if self.uses_directory_init() else "")
@@ -299,12 +314,23 @@ def load_recent() -> List[StartupOptions]:
         items = json.loads(raw) if isinstance(raw, str) else []
     except ValueError:
         items = []
-    return [StartupOptions.from_dict(d) for d in items if isinstance(d, dict)]
+    return _unique([StartupOptions.from_dict(d) for d in items if isinstance(d, dict)])
+
+
+def _unique(recent: List[StartupOptions]) -> List[StartupOptions]:
+    """Keep only the first (latest) entry for each ``recent_key``."""
+    seen = set()
+    out = []
+    for opts in recent:
+        key = opts.recent_key()
+        if key not in seen:
+            seen.add(key)
+            out.append(opts)
+    return out
 
 
 def save_recent(options: StartupOptions) -> None:
-    recent = [r for r in load_recent() if asdict(r) != asdict(options)]
-    recent.insert(0, options)
+    recent = _unique([options, *load_recent()])
     QSettings().setValue("startup/recent", json.dumps([asdict(r) for r in recent[:MAX_RECENT]]))
 
 
