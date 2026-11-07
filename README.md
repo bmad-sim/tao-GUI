@@ -31,8 +31,13 @@ remembered between sessions; Window > Tile Windows lays them out again.
     startups. The other windows open once Tao has started; if Tao reports an error,
     the startup window stays open with the message. File > Open brings it back to
     reinitialize.
-- **Console** (main window): Tao command line with history (Up/Down). Anything the
-  GUI doesn't have a widget for still works here. Closing it quits.
+- **Main window:** opens on top of the others. Closing it quits.
+  - **Command file** box (top): runs Tao's `call` command. Type a file name and any
+    arguments, or use Browse…, then Call (or Enter). Past calls are kept in the list,
+    latest first, between sessions.
+  - **Console** (bottom): Tao command line with history (Up/Down), and the output of
+    every command the GUI runs. Anything the GUI doesn't have a widget for still
+    works here.
 - **Plot windows:** any Tao plot template (beta, orbit, floor_plan, …), drawn with
   matplotlib from Tao's `pipe` data, with the lattice layout under s-based plots.
   Plot > New Plot Window adds more. Plots redraw after every change to Tao's state.
@@ -186,4 +191,4 @@ The tests start Tao on the small FODO ring in `tests/files` (with two data and t
 | `tables.py` | Data and variable browsers |
 | `details.py` | Parameter window for one datum or variable |
 | `optimizer.py` | Optimizer window |
-| `console.py` | Command console |
+| `console.py` | Main window contents: command-file box and Tao console |

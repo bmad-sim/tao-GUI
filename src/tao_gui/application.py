@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
-from .console import ConsoleWidget
+from .console import CallFileBox, ConsoleWidget, MainWidget
 from .details import ElementWindow, ParameterWindow
 from .lattice import ElementRow, LatticeWidget
 from .optimizer import OptimizerWidget
@@ -33,7 +33,7 @@ DEFAULT_TEMPLATES = ("beta", "orbit")
 
 # key, title, window-menu shortcut
 SECTIONS = (
-    ("console", "Tao Console", "Ctrl+1"),
+    ("console", "Main", "Ctrl+1"),  # key kept as "console" for saved window settings
     ("lattice", "Lattice", "Ctrl+2"),
     ("data", "Data", "Ctrl+3"),
     ("variables", "Variables", "Ctrl+4"),
@@ -67,12 +67,13 @@ class TaoGui(QObject):
 
         # Section widgets
         self.console = ConsoleWidget(self.client)
+        self.call_box = CallFileBox(self.console)
         self.lattice = LatticeWidget(self.client)
         self.data = DataWidget(self.client)
         self.variables = VariablesWidget(self.client)
         self.optimizer = OptimizerWidget(self.client)
         widgets = {
-            "console": self.console,
+            "console": MainWidget(self.call_box, self.console),
             "lattice": self.lattice,
             "data": self.data,
             "variables": self.variables,
@@ -184,6 +185,7 @@ class TaoGui(QObject):
         menu.addActions([self.act_tile, self.act_show_all])
 
     def _setup_console_window(self) -> None:
+        """The Main window: toolbar, command-file box, console and status bar."""
         window = self.windows["console"]
         toolbar = QToolBar("Windows")
         toolbar.setObjectName("windows_toolbar")
@@ -325,12 +327,13 @@ class TaoGui(QObject):
         visible = settings.value("windows/visible") if restored else None
         if isinstance(visible, str):
             visible = [visible]
-        for key in visible or ("console", "lattice"):
-            if key in self.windows:
+        for key in visible or ("lattice",):
+            if key in self.windows and key != "console":
                 self.windows[key].show()
-        self.windows["console"].show()
         for window in self.plot_windows:
             window.show()
+        # The Main window last, so it starts on top of the others.
+        self.windows["console"].show_and_raise()
 
     def _add_default_plots(self, templates=None) -> None:
         if isinstance(templates, str):

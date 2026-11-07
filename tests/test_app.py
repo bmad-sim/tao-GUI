@@ -510,3 +510,43 @@ def test_floor_plan_click_opens_element_window(gui, qtbot):
                      pos=QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio)))
     assert ("ele", f"0>>{QF}") not in gui.parameter_windows
     panel.toolbar.zoom()
+
+
+# ----------------------------------------------------------------------
+# Main window: on top at startup, command files
+
+
+def test_main_window_starts_on_top(gui):
+    from PySide6.QtWidgets import QApplication
+
+    main = gui.windows["console"]
+    assert main.windowTitle().startswith("Main")
+    assert QApplication.activeWindow() is main
+    assert gui.call_box.isVisibleTo(main) and gui.console.isVisibleTo(main)
+    # The command-file box sits above the console.
+    assert gui.call_box.mapTo(main, gui.call_box.rect().topLeft()).y() < \
+        gui.console.mapTo(main, gui.console.rect().topLeft()).y()
+
+
+def test_call_command_file_with_history(gui, qtbot, tmp_path):
+    first = tmp_path / "k1.tao"
+    first.write_text("set ele qf k1 = [[1]]\n")
+    box = gui.call_box
+    assert box.combo.count() == 0
+
+    box.combo.setCurrentText(f"{first} 0.33")  # file plus an argument
+    box.call_button.click()
+    wait_idle(qtbot, gui.client)
+    k1 = run_sync(qtbot, gui.client, lambda t: t.ele_gen_attribs(f"0>>{QF}")["K1"])
+    assert abs(k1 - 0.33) < 1e-12
+    assert f"Tao> call {first} 0.33" in gui.console.output.toPlainText()
+
+    box.combo.setCurrentText(f"{first} 0.34")
+    box.combo.lineEdit().returnPressed.emit()  # Enter also calls
+    wait_idle(qtbot, gui.client)
+    box.combo.setCurrentText(f"{first} 0.33")  # again: moves to the top, no duplicate
+    box.call()
+    wait_idle(qtbot, gui.client)
+    items = [box.combo.itemText(i) for i in range(box.combo.count())]
+    assert items == [f"{first} 0.33", f"{first} 0.34"]
+    assert box.history() == items  # saved for the next session
