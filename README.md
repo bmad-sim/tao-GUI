@@ -7,9 +7,7 @@ Status: early development.
 
 ## Features
 
-Each section is its own window, so you can arrange them across screens. Every
-window has the same menu bar (File, Tao, Plot, Window, Help), and the Window menu
-(Ctrl+1 … Ctrl+5) brings any section back. Window positions and the open plots are
+Window positions and the open plots are
 remembered between sessions; Window > Tile Windows lays them out again.
 
 - **Startup window:** when `tao-gui` is run with no arguments and there is no
