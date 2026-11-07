@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .console import ConsoleWidget
-from .details import ParameterWindow
+from .details import ElementWindow, ParameterWindow
 from .lattice import ElementRow, LatticeWidget
 from .optimizer import OptimizerWidget
 from .plots import PlotPanel
@@ -224,6 +224,7 @@ class TaoGui(QObject):
         if self.templates:
             panel.set_templates(self.templates)
         panel.s_clicked.connect(self._on_plot_click)
+        panel.element_clicked.connect(self._on_floor_plan_click)
         panel.s_range_changed.connect(lambda r, p=panel: self._on_s_range_changed(p, r))
         if self.selected is not None:
             panel.selection = (self.selected.s - self.selected.length, self.selected.s)
@@ -248,6 +249,25 @@ class TaoGui(QObject):
             self.parameter_windows[(kind, name)] = window
         window.show_and_raise()
         return window
+
+    def show_element(self, branch: int, index: int) -> ElementWindow:
+        """Open (or raise) the attribute window of a lattice element."""
+        key = ("ele", f"{branch}>>{index}")
+        window = self.parameter_windows.get(key)
+        if window is None:
+            window = ElementWindow(self, self.client, branch, index)
+            window.command_output.connect(self._echo_command)
+            self.parameter_windows[key] = window
+        window.show_and_raise()
+        return window
+
+    def _on_floor_plan_click(self, branch: int, index: int) -> None:
+        """Clicking a floor-plan element opens its window and selects it everywhere."""
+        row = self.lattice.row_for(index) if branch == self.lattice.branch else None
+        if row is not None:  # lords etc. are not in the Lattice window's table
+            self.lattice.select_element(index)
+            self._set_selected(row)
+        self.show_element(branch, index)
 
     def remove_parameter_window(self, window: ParameterWindow) -> None:
         self.parameter_windows.pop((window.kind, window.name), None)
