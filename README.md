@@ -49,6 +49,7 @@ remembered between sessions; Window > Tile Windows lays them out again.
 - **Datum and variable parameters:** double-click a row in the Data or Variables
   window to open a window with every parameter of that datum or variable. Parameters
   Tao lets you set are editable (`set data` / `set var`); the rest are greyed out.
+  "Two columns" (the default) shows them in two parameter/value column pairs; untick it for one.
   In the tables, edit a cell by clicking it once its row is selected, or with F2.
 - **Optimizer:** choose the optimizer and cycles/loops, run it (Tao > Run Optimizer,
   Ctrl+R), and see the merit and the `show merit` table.

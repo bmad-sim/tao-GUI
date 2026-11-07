@@ -355,3 +355,67 @@ def test_double_click_variable_opens_parameters(gui, qtbot):
     wait_idle(qtbot, gui.client)
     assert window.table.value_item("base_value").text() == old
     assert "Tao rejected" in window.statusBar().currentMessage()
+
+
+def test_parameter_window_columns_toggle(gui, qtbot):
+    from PySide6.QtCore import QSettings
+
+    from tao_gui.details import TWO_COLUMNS_KEY
+
+    window = gui.show_parameters("data", "1@twiss.beta[1]")
+    qtbot.addWidget(window)
+    wait_idle(qtbot, gui.client)
+    table = window.table
+    n = len(table.params)
+    assert window.two_columns.isChecked()  # two columns is the default
+    assert table.columnCount() == 4 and table.rowCount() == (n + 1) // 2
+    headers = [table.horizontalHeaderItem(c).text() for c in range(4)]
+    assert headers == ["Parameter", "Value", "Parameter", "Value"]
+    # Parameters run down the left pair, then down the right one.
+    assert table.item(0, 0).text() == table.params[0].name
+    assert table.item(0, 2).text() == table.params[table.rowCount()].name
+
+    # Editing works in the right-hand pair.
+    assert table.value_item("weight").column() == 3
+    table.value_item("weight").setText("4")
+    wait_idle(qtbot, gui.client)
+    w = run_sync(qtbot, gui.client, lambda t: t.data_d_array("twiss", "beta", ix_uni=1)[0]["weight"])
+    assert w == 4
+
+    assert fits(qtbot, window)
+    width, height = window.width(), window.height()
+    window.two_columns.setChecked(False)
+    assert table.columnCount() == 2 and table.rowCount() == n
+    assert table.value_item("weight").text() == "4"
+    # The window refits: narrower and taller (up to the screen height).
+    assert fits(qtbot, window)
+    assert window.width() < width and window.height() > height
+    assert QSettings().value(TWO_COLUMNS_KEY, type=bool) is False
+
+    # New windows use the last choice.
+    other = gui.show_parameters("var", "quad[1]")
+    qtbot.addWidget(other)
+    assert not other.two_columns.isChecked() and other.table.columnCount() == 2
+    wait_idle(qtbot, gui.client)
+    assert fits(qtbot, other)
+
+    # Back to two columns: the window refits with no scroll bar.
+    window.two_columns.setChecked(True)
+    assert fits(qtbot, window) and not table.verticalScrollBar().isVisible()
+
+
+def fits(qtbot, window) -> bool:
+    """The parameter table shows every cell: no scroll bars, no clipped columns.
+
+    A window as tall as the screen may still need a vertical scroll bar.
+    """
+    qtbot.wait(50)  # let the resize and layout settle
+    table = window.table
+    max_height = window.screen().availableGeometry().height()
+    at_screen_height = window.frameGeometry().height() >= max_height - 1
+    if table.verticalScrollBar().isVisible() and not at_screen_height:
+        return False
+    if table.horizontalScrollBar().isVisible():
+        return False
+    return all(table.columnWidth(c) >= table.sizeHintForColumn(c)
+               for c in range(table.columnCount()))
