@@ -54,6 +54,19 @@ remembered between sessions; Window > Tile Windows lays them out again.
   Tao lets you set are editable (`set data` / `set var`); the rest are greyed out.
   "Two columns" (the default) shows them in two parameter/value column pairs; untick it for one.
   In the tables, edit a cell by clicking it once its row is selected, or with F2.
+- **Change** (Tao > Change, Ctrl+6): a form for Tao's `change` command: element
+  attributes, variables, particle_start and the tunes. Choose how to change (add,
+  set `@`, design + `d`, percent `%`), see the command it will run, and Tao's
+  report (old and new values, change in merit) below. "Use selected" fills in the
+  element selected in the Lattice window or a plot.
+- **Set** (Tao > Set, Ctrl+7): Tao's `set` command. Pick a group (global,
+  bmad_com, beam, beam_init, space_charge_com, ptc_com, opti_de_param) to see all of
+  its parameters; edit the settable ones. A `set` line below runs any other
+  subcommand, with a history of past entries.
+- **Single Mode** (Tao > Single Mode, Ctrl+8): the variables bound to keys
+  (`key_bound`, `key_delta`), ten at a time as in Tao's single mode. Step them with
+  the buttons or Tao's keys (1…0 up, q…p down, Shift for ×10; arrows change the bank
+  and scale the deltas), scale all deltas, and save and restore values.
 - **Optimizer:** choose the optimizer and cycles/loops, run it (Tao > Run Optimizer,
   Ctrl+R), and see the merit and the `show merit` table.
 
@@ -194,4 +207,7 @@ The tests start Tao on the small FODO ring in `tests/files` (with two data and t
 | `tables.py` | Data and variable browsers |
 | `details.py` | Parameter window for one datum or variable |
 | `optimizer.py` | Optimizer window |
+| `change.py` | Change window (`change` command) |
+| `set_window.py` | Set window (`set` command) |
+| `single_mode.py` | Single Mode window (key-bound variables) |
 | `console.py` | Main window contents: command-file box and Tao console |

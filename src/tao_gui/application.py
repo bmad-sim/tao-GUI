@@ -22,7 +22,10 @@ from . import __version__
 from .console import CallFileBox, ConsoleWidget, MainWidget
 from .details import ElementWindow, ParameterWindow
 from .lattice import ElementRow, LatticeWidget
+from .change import ChangeWidget
 from .optimizer import OptimizerWidget
+from .set_window import SetWidget
+from .single_mode import SingleModeWidget
 from .plots import PlotPanel
 from .startup import StartupOptions, StartupWindow
 from .tables import DataWidget, VariablesWidget
@@ -38,6 +41,9 @@ SECTIONS = (
     ("data", "Data", "Ctrl+3"),
     ("variables", "Variables", "Ctrl+4"),
     ("optimizer", "Optimizer", "Ctrl+5"),
+    ("change", "Change", "Ctrl+6"),
+    ("set", "Set", "Ctrl+7"),
+    ("single_mode", "Single Mode", "Ctrl+8"),
 )
 
 
@@ -72,12 +78,18 @@ class TaoGui(QObject):
         self.data = DataWidget(self.client)
         self.variables = VariablesWidget(self.client)
         self.optimizer = OptimizerWidget(self.client)
+        self.change = ChangeWidget(self.client)
+        self.set_widget = SetWidget(self.client)
+        self.single_mode = SingleModeWidget(self.client)
         widgets = {
             "console": MainWidget(self.call_box, self.console),
             "lattice": self.lattice,
             "data": self.data,
             "variables": self.variables,
             "optimizer": self.optimizer,
+            "change": self.change,
+            "set": self.set_widget,
+            "single_mode": self.single_mode,
         }
 
         self._create_actions()
@@ -89,10 +101,12 @@ class TaoGui(QObject):
 
         # Wiring
         self.console.exit_requested.connect(self.quit)
-        for widget in (self.lattice, self.data, self.variables, self.optimizer):
+        for widget in (self.lattice, self.data, self.variables, self.optimizer,
+                       self.change, self.set_widget, self.single_mode):
             widget.command_output.connect(self._echo_command)
         self.data.details_requested.connect(self.show_parameters)
         self.variables.details_requested.connect(self.show_parameters)
+        self.change.use_selected.clicked.connect(self._change_selected_element)
         self.lattice.element_selected.connect(self._on_lattice_selection)
         self.lattice.rows_loaded.connect(self._reapply_selection)
         self.client.busy_changed.connect(self.busy_bar.setVisible)
@@ -154,6 +168,8 @@ class TaoGui(QObject):
 
         tao_menu = bar.addMenu("&Tao")
         tao_menu.addActions([self.act_run, self.act_command])
+        tao_menu.addSeparator()
+        tao_menu.addActions([self.section_actions[k] for k in ("change", "set", "single_mode")])
 
         plot_menu = bar.addMenu("&Plot")
         plot_menu.addAction(self.act_new_plot)
@@ -195,6 +211,9 @@ class TaoGui(QObject):
         toolbar.addSeparator()
         toolbar.addAction(self.act_new_plot)
         toolbar.addAction(self.act_run)
+        toolbar.addSeparator()
+        for key in ("change", "set", "single_mode"):
+            toolbar.addAction(self.section_actions[key])
         window.addToolBar(toolbar)
 
         self.lattice_label = QLabel("Tao not started")
@@ -514,6 +533,16 @@ class TaoGui(QObject):
     def _reapply_selection(self) -> None:
         if self.selected is not None:
             self._set_selected(self.lattice.row_for(self.selected.ix))
+
+    def _change_selected_element(self) -> None:
+        """Put the selected element in the Change window: by name if the name is
+        unique, else by index (a name would change every element of that name)."""
+        row = self.selected
+        if row is None:
+            self.change.preview.setText("<i>Select an element in the Lattice window or a plot</i>")
+            return
+        same_name = sum(r.name == row.name for r in self.lattice.model.rows)
+        self.change.set_element(row.name if same_name == 1 else f"{self.lattice.branch}>>{row.ix}")
 
     def _set_selected(self, row: Optional[ElementRow]) -> None:
         self.selected = row
