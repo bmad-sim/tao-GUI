@@ -191,3 +191,50 @@ def test_single_mode_buttons_and_keys(gui, qtbot):
     QTest.keyClick(sm, Qt.Key_Right)  # only one bank
     assert sm.bank == 0
     assert window.isVisible()
+
+
+# ----------------------------------------------------------------------
+# Show
+
+
+def test_show_window(gui, qtbot):
+    show = gui.show_widget
+    gui.section_actions["show"].trigger()
+    assert gui.windows["show"].isVisible()
+    assert show.list.count() == 49 and show.current == "element"
+
+    show.set_argument("qf")
+    show.run()
+    wait_idle(qtbot, gui.client)
+    assert "Quadrupole" in show.output.toPlainText()
+    assert "Tao> show element qf" in gui.console.output.toPlainText()
+    assert show.history()[0] == "element qf"
+
+    show.choose("merit")  # no arguments needed
+    show.set_argument("")
+    show.run()
+    wait_idle(qtbot, gui.client)
+    before = show.output.toPlainText()
+    assert "Merit" in before or "merit" in before
+
+    # Update automatically: the shown merit follows a change to the lattice.
+    show.auto.setChecked(True)
+    gui.console.run_command("set ele qf k1 = 0.33")
+    wait_idle(qtbot, gui.client)
+    assert show.output.toPlainText() != before
+
+    show.show_help()
+    wait_idle(qtbot, gui.client)
+    assert "show merit" in show.output.toPlainText().lower()
+
+    show._on_history_chosen("element qf")  # picking from the history fills both
+    assert show.current == "element" and show.args.currentText() == "qf"
+
+
+def test_show_uses_selected_element(gui, qtbot):
+    gui._set_selected(gui.lattice.row_for(QF))
+    gui.show_widget.choose("element")
+    gui.show_widget.use_selected.click()
+    assert gui.show_widget.args.currentText() == f"0>>{QF}"  # QF's name is not unique
+    gui.show_widget.choose("merit")
+    assert not gui.show_widget.use_selected.isEnabled()
