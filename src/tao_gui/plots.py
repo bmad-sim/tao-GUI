@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from .tao_worker import TaoClient, TaoWorker
 
 LAYOUT_TEMPLATE = "lat_layout"
+ASPECT_SLACK = 8  # pixels left around a fixed-aspect plot when trimming the window
 # Height of each graph and of the lattice layout strip, relative to each other.
 GRAPH_RATIO = 3
 LAYOUT_RATIO = 1
@@ -182,8 +183,9 @@ class PlotPanel(QWidget):
         self._has_layout = False  # the last drawing included the lattice layout
         self._n_graphs = 0
         self._resize_for_layout: Optional[int] = None  # canvas height when layout was toggled
+        self._fit_aspect = True  # on the next drawing, trim space a fixed-aspect plot can't use
 
-        bar = QHBoxLayout()
+        self._bar = bar = QHBoxLayout()
         bar.addWidget(QLabel("Plot:"))
         bar.addWidget(self.template_combo)
         bar.addWidget(self.layout_check)
@@ -216,6 +218,7 @@ class PlotPanel(QWidget):
         self.template = name
         self.region = None  # place the new template
         self.user_s_range = None
+        self._fit_aspect = True
         self.template_combo.setCurrentText(name)
         self.template_changed.emit(name)
         self.refresh()
@@ -280,9 +283,41 @@ class PlotPanel(QWidget):
                 self._draw_selection()
         finally:
             self._drawing = False
+        if self._fit_aspect:
+            self._fit_aspect = False
+            self._trim_to_aspect()
         self.canvas.draw_idle()
         self.status.setVisible(False)
         self._done()
+
+    def _trim_to_aspect(self) -> None:
+        """Shrink the window by the space a fixed-aspect plot (e.g. floor_plan) leaves empty.
+
+        Such axes keep their data aspect ratio by shrinking their box, which leaves
+        blank bands at the sides (or top and bottom). Done once when a template is
+        first drawn, so a size the user picks later is kept.
+        """
+        window = self.window()
+        if window is self or window.isMaximized() or window.isFullScreen():
+            return
+        axes = [ax for ax in self.figure.axes
+                if ax.get_aspect() != "auto" and ax.get_adjustable() == "box"]
+        if not axes:
+            return
+        self.canvas.draw()  # lay out, so the axes boxes reflect the aspect
+        width, height = self.canvas.width(), self.canvas.height()
+        spare_w = min((ax.get_position(original=True).width - ax.get_position().width) * width
+                      for ax in axes)
+        spare_h = min((ax.get_position(original=True).height - ax.get_position().height) * height
+                      for ax in axes)
+        spare_w, spare_h = int(spare_w) - ASPECT_SLACK, int(spare_h) - ASPECT_SLACK
+        # Keep the whole bar (template, layout toggle, toolbar) visible.
+        self._bar.invalidate()  # the layout toggle may just have been shown or hidden
+        margins = self.layout().contentsMargins()
+        bar_width = self._bar.sizeHint().width() + margins.left() + margins.right()
+        spare_w = min(spare_w, self.width() - bar_width)
+        if spare_w > 0 or spare_h > 0:
+            window.resize(window.width() - max(spare_w, 0), window.height() - max(spare_h, 0))
 
     def _on_error(self, message: str) -> None:
         self.figure.clear()
