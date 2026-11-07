@@ -10,8 +10,9 @@ Status: early development.
 Window positions and the open plots are
 remembered between sessions; Window > Tile Windows lays them out again.
 
-- **Startup window:** when `tao-gui` is run with no arguments and there is no
-  `tao.init` in the current directory, this is the only window that opens. Choose an
+- **Startup window:** when `tao-gui` is run with no arguments, this is the only
+  window that opens. If the current directory has a `tao.init`, it is already set up
+  to use it: press Start Tao, or change the files and options first. Choose an
   init file and/or lattice file, the working directory, and the beam, data, variable,
   startup and plot files. A working directory that has a `tao.init` is enough on its
   own. Empty file fields use the init file's setting, which is
@@ -185,7 +186,7 @@ With `-e` (editable install) the launcher runs the code in this checkout, so a
 ```bash
 tao-gui -init tao.init           # any Tao command-line arguments
 tao-gui -lattice_file my.bmad
-tao-gui                          # uses ./tao.init if present, else File > Open
+tao-gui                          # startup window (ready to use ./tao.init if present)
 ```
 
 Run it from the directory you would run Tao from: Tao resolves relative file
