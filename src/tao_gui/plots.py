@@ -41,7 +41,8 @@ Range = Tuple[float, float]
 class PlotData:
     region: str
     graphs: List[Any] = field(default_factory=list)
-    layout: Optional[Any] = None
+    layout: Optional[Any] = None  # the layout graph, when it is to be drawn
+    layout_available: bool = False  # this plot can have a lattice layout strip
 
     @property
     def is_s_plot(self) -> bool:
@@ -69,8 +70,12 @@ def fetch_plot(
         graphs = gm.update_region(region_name=region, template_name=template)
 
     data = PlotData(region=region, graphs=graphs)
-    if include_layout and data.is_s_plot:
-        data.layout = _layout_graph(worker, gm, LatticeLayoutGraph)
+    if data.is_s_plot and not any(isinstance(g, LatticeLayoutGraph) for g in graphs):
+        # Read even when it won't be drawn, to know whether the toggle applies.
+        layout = _layout_graph(worker, gm, LatticeLayoutGraph)
+        data.layout_available = layout is not None
+        if include_layout:
+            data.layout = layout
     return data
 
 
@@ -164,6 +169,7 @@ class PlotPanel(QWidget):
         self.layout_check = QCheckBox("Lattice layout")
         self.layout_check.setChecked(True)
         self.layout_check.toggled.connect(self._on_layout_toggled)
+        self.layout_check.setVisible(False)  # shown once a plot that can have a layout is drawn
 
         # "tight" re-fits the margins on every draw, including after a resize.
         self.figure = Figure(layout="tight")
@@ -256,6 +262,7 @@ class PlotPanel(QWidget):
 
     def _on_data(self, data: PlotData) -> None:
         self.region = data.region
+        self.layout_check.setVisible(data.layout_available)
         has_layout = data.layout is not None
         self._keep_graph_height(has_layout, len(data.graphs))
         self._has_layout, self._n_graphs = has_layout, len(data.graphs)
@@ -281,6 +288,7 @@ class PlotPanel(QWidget):
         self.figure.clear()
         self.s_axes = []
         self.figure.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
+        self.layout_check.setVisible(False)
         self.canvas.draw_idle()
         self.status.setText(f"Could not plot {self.template!r}")
         self.status.setVisible(True)

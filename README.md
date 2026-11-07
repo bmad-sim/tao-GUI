@@ -36,10 +36,8 @@ remembered between sessions; Window > Tile Windows lays them out again.
 - **Plot windows:** any Tao plot template (beta, orbit, floor_plan, …), drawn with
   matplotlib from Tao's `pipe` data, with the lattice layout under s-based plots.
   Plot > New Plot Window adds more. Plots redraw after every change to Tao's state.
-  - Zooming one s-based plot zooms all of them (Plot > Link s-Axis Zoom; Ctrl+0
-    resets).
-  - Clicking a plot selects the element there; the selected element is shaded in
-    every plot.
+  Zooming one s-based plot zooms all of them, and clicking a plot selects the element
+  there. See [Working with plots](#working-with-plots).
 - **Lattice:** element table per branch, with a name or key filter (wildcards `*`
   and `%`). Select an element to see its attributes; edit a value to issue `set ele`.
 - **Data:** d2/d1 tree and the datums of the chosen d1 array. Edit meas and weight,
@@ -58,6 +56,52 @@ Tao always runs inside the GUI process on one background thread, so the windows 
 responsive while Tao computes. Tao's own plot window is turned off
 (`-noplot -external_plotting`). While the optimizer runs, the windows respond, but
 Tao commands wait until it finishes.
+
+## Working with plots
+
+Each plot window has a bar along the top:
+
+- **Plot:** the Tao plot template shown. Pick one from the list, or type a template
+  name and press Enter.
+- **Lattice layout:** show or hide the lattice layout strip under the plot. It is
+  only there for plots against s that can have one. Turning the strip on or off
+  keeps the plot's height; the window grows or shrinks instead.
+- **Toolbar** (matplotlib's navigation toolbar), described below.
+
+### Zooming and panning
+
+| Button | What it does |
+|---|---|
+| Home | Back to the full plot range. |
+| Back / Forward | Step through the views you have zoomed or panned to. |
+| Pan | Left-drag moves the plot. Right-drag zooms: drag right or up to zoom in, left or down to zoom out. Hold **x** or **y** while dragging to pan or zoom only that axis; hold **Ctrl** to keep the aspect ratio. |
+| Zoom | Left-drag a rectangle to zoom into it; right-drag a rectangle to zoom out. Hold **x** or **y** to zoom only that axis. |
+| Subplots | Adjust the margins and spacing of the graphs. |
+| Customize | Edit axis limits, labels, scales and line styles. |
+| Save | Save the plot as an image (PNG, PDF, SVG, …). |
+
+Pan and Zoom stay on until you click the button again. Click the canvas first if
+holding **x**, **y** or **Ctrl** has no effect, since the keys go to the canvas
+only when it has focus. The mouse wheel does not zoom.
+
+### Linked s-axis zoom
+
+When **Plot > Link s-Axis Zoom** is on (the default), changing the s range of one
+plot against s, by zooming, panning, Home, Back or Forward, gives every other
+s-based plot window the same s range. The vertical axes are not linked. Plots that
+are not against s, such as floor_plan, are not affected.
+
+- **Plot > Reset Zoom** (Ctrl+0) returns every plot to its full range.
+- Zoom ranges survive redraws: changing a variable, running the optimizer or
+  **Plot > Refresh All** (F5) keeps the range you are looking at.
+- A newly opened plot window starts at the linked range.
+
+### Selecting elements
+
+With neither Pan nor Zoom active, click a plot against s to select the lattice
+element at that s. The element is shaded in every plot and selected in the
+Lattice window, where its attributes are shown. Selecting an element in the
+Lattice window shades it in the plots too.
 
 ## Install
 
