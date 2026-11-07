@@ -26,7 +26,7 @@ def column(table, title):
 def test_sections_are_separate_windows(gui):
     windows = list(gui.windows.values()) + gui.plot_windows
     assert {w.key for w in gui.windows.values()} == {
-        "console", "lattice", "data", "variables", "optimizer"}
+        "console", "lattice", "data", "variables", "optimizer", "change", "set", "single_mode"}
     for window in windows:
         assert window.isWindow() and window.parent() is None
         menus = [a.text().replace("&", "") for a in window.menuBar().actions()]

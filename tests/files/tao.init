@@ -38,6 +38,8 @@
   ix_min_var = 1
   var(1)%ele_name = "qf"
   var(2)%ele_name = "qd"
+  var(1:2)%key_bound = T, T
+  var(1:2)%key_delta = 0.01, 0.02
 /
 
 &tao_params
