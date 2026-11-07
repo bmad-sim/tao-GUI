@@ -11,8 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, List
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QMainWindow,
@@ -29,6 +31,9 @@ if TYPE_CHECKING:
     from .application import TaoGui
 
 KIND_TITLES = {"data": "Datum", "var": "Variable"}
+TWO_COLUMNS_KEY = "parameters/two_columns"  # QSettings: last choice, used for new windows
+ONE_COLUMN_SIZE = (420, 640)
+TWO_COLUMN_SIZE = (760, 480)
 
 
 @dataclass(frozen=True)
@@ -72,24 +77,46 @@ def fetch_parameters(tao, kind: str, name: str) -> List[Parameter]:
 
 
 class ParameterTable(QTableWidget):
-    """Parameter / value table; edits emit ``edited(name, text)``."""
+    """Parameter / value table in one or two column pairs; edits emit ``edited(name, text)``.
+
+    With two pairs the parameters run down the left pair, then down the right one.
+    """
 
     edited = Signal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(0, 2, parent)
-        self.setHorizontalHeaderLabels(["Parameter", "Value"])
         self.verticalHeader().setVisible(False)
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         # Compact rows; no grid, so the only rule is the one under the header.
         self.setShowGrid(False)
         self.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
         self.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 4)
         self.params: List[Parameter] = []
+        self.pairs = 1
         self._loading = False
         self.itemChanged.connect(self._on_item_changed)
+        self._setup_columns()
+
+    def set_pairs(self, pairs: int) -> None:
+        """Show the parameters in ``pairs`` (1 or 2) parameter/value column pairs."""
+        if pairs != self.pairs:
+            self.pairs = pairs
+            self._setup_columns()
+            self.set_parameters(self.params)
+
+    def _setup_columns(self) -> None:
+        self.setColumnCount(2 * self.pairs)
+        self.setHorizontalHeaderLabels(["Parameter", "Value"] * self.pairs)
+        header = self.horizontalHeader()
+        for k in range(self.pairs):
+            header.setSectionResizeMode(2 * k, QHeaderView.Interactive)
+            header.setSectionResizeMode(2 * k + 1, QHeaderView.Stretch)
+
+    def _cell(self, index: int) -> tuple:
+        """(row, value column) of parameter ``index``."""
+        rows = max(1, self.rowCount())
+        return index % rows, 2 * (index // rows) + 1
 
     def set_parameters(self, params: List[Parameter]) -> None:
         self._loading = True
@@ -97,15 +124,19 @@ class ParameterTable(QTableWidget):
         try:
             self.params = params
             self.clearContents()
-            self.setRowCount(len(params))
-            for row, p in enumerate(params):
+            self.setRowCount(-(-len(params) // self.pairs))  # ceiling division
+            for index, p in enumerate(params):
+                row, col = self._cell(index)
                 name_item = QTableWidgetItem(p.name)
                 name_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 if not p.settable:
                     name_item.setToolTip("Read only")
-                self.setItem(row, 0, name_item)
-                self.setItem(row, 1, self._value_item(p))
-            self.resizeColumnToContents(0)
+                value_item = self._value_item(p)
+                value_item.setData(Qt.UserRole + 1, index)
+                self.setItem(row, col - 1, name_item)
+                self.setItem(row, col, value_item)
+            for k in range(self.pairs):
+                self.resizeColumnToContents(2 * k)
         finally:
             self.setUpdatesEnabled(True)
             self._loading = False
@@ -129,15 +160,16 @@ class ParameterTable(QTableWidget):
         return item
 
     def value_item(self, name: str) -> QTableWidgetItem:
-        for row, p in enumerate(self.params):
+        for index, p in enumerate(self.params):
             if p.name == name:
-                return self.item(row, 1)
+                return self.item(*self._cell(index))
         raise KeyError(name)
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        if self._loading or item.column() != 1:
+        index = item.data(Qt.UserRole + 1)
+        if self._loading or index is None:
             return
-        p = self.params[item.row()]
+        p = self.params[index]
         if p.type == "LOGIC":
             text = "T" if item.checkState() == Qt.Checked else "F"
         else:
@@ -163,19 +195,36 @@ class ParameterWindow(QMainWindow):
 
         self.header = QLabel()
         self.header.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        two = QSettings().value(TWO_COLUMNS_KEY, True, type=bool)
+        self.two_columns = QCheckBox("Two columns")
+        self.two_columns.setToolTip("Show the parameters in two parameter/value columns")
+        self.two_columns.setChecked(two)
+        self.two_columns.toggled.connect(self._on_two_columns)
         self.table = ParameterTable()
+        self.table.set_pairs(2 if two else 1)
         self.table.edited.connect(self._on_edited)
+        top = QHBoxLayout()
+        top.addWidget(self.header, 1)
+        top.addWidget(self.two_columns)
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.addWidget(self.header)
+        layout.addLayout(top)
         layout.addWidget(self.table, 1)
         self.setCentralWidget(central)
         gui.build_menus(self.menuBar())
-        self.resize(420, 640)
+        self.resize(*(TWO_COLUMN_SIZE if two else ONE_COLUMN_SIZE))
 
         client.state_changed.connect(self.refresh)
         self.refresh()
+
+    def _on_two_columns(self, on: bool) -> None:
+        """Switch layouts; the window keeps its height and changes its width."""
+        QSettings().setValue(TWO_COLUMNS_KEY, on)
+        self.table.set_pairs(2 if on else 1)
+        if not (self.isMaximized() or self.isFullScreen()):
+            width = (TWO_COLUMN_SIZE if on else ONE_COLUMN_SIZE)[0]
+            self.resize(width, self.height())
 
     def refresh(self) -> None:
         if not self.client.is_running:
