@@ -17,7 +17,7 @@ from typing import Any, List, Optional, Tuple
 import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
-from PySide6.QtCore import QSize, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -132,6 +132,18 @@ def draw_plot(figure: Figure, data: PlotData) -> list:
     return list(axes) if s_plot else []
 
 
+def _shift_held(event) -> bool:
+    """Whether Shift was down for this matplotlib mouse event.
+
+    Read from the Qt mouse event when there is one (exact for this click);
+    otherwise from matplotlib's modifiers.
+    """
+    gui_event = getattr(event, "guiEvent", None)
+    if gui_event is not None and hasattr(gui_event, "modifiers"):
+        return bool(gui_event.modifiers() & Qt.ShiftModifier)
+    return "shift" in (getattr(event, "modifiers", None) or ())
+
+
 class FloorPlanHits:
     """Finds the floor-plan element under a click.
 
@@ -175,18 +187,20 @@ class PlotPanel(QWidget):
     Signals
     -------
     template_changed(str)
-    s_clicked(float)
-        The user clicked an s-plot at this s (not in zoom/pan mode).
+    s_clicked(float, bool)
+        The user clicked an s-plot at this s (not in zoom/pan mode). The flag is
+        True for a shift-click on a lattice layout (strip or lat_layout plot).
     s_range_changed(object)
         The user changed the s range (zoom, pan, home): an (s0, s1) tuple.
-    element_clicked(int, int)
-        The user clicked an element of a floor plan: (branch, element index).
+    element_clicked(int, int, bool)
+        The user clicked an element of a floor plan: (branch, element index,
+        shift held).
     """
 
     template_changed = Signal(str)
-    s_clicked = Signal(float)
+    s_clicked = Signal(float, bool)
     s_range_changed = Signal(object)
-    element_clicked = Signal(int, int)
+    element_clicked = Signal(int, int, bool)
 
     def __init__(self, client: TaoClient, template: str = "", parent=None) -> None:
         super().__init__(parent)
@@ -198,6 +212,7 @@ class PlotPanel(QWidget):
         self.user_s_range: Optional[Range] = None
         self._selection_artists: list = []
         self._floor_hits: List[FloorPlanHits] = []
+        self._layout_axes: list = []
         self._refresh_pending = False
         self._refreshing = False
         self._drawing = False
@@ -318,6 +333,11 @@ class PlotPanel(QWidget):
             self._floor_hits = [FloorPlanHits(ax, g.elements)
                                 for ax, g in zip(self.figure.axes, data.graphs)
                                 if type(g).__name__ == "FloorPlanGraph"]
+            # Lattice layouts: the strip under a plot, or the lat_layout plot itself.
+            self._layout_axes = [ax for ax, g in zip(self.figure.axes, data.graphs)
+                                 if type(g).__name__ == "LatticeLayoutGraph"]
+            if data.layout is not None:
+                self._layout_axes.append(self.figure.axes[-1])
             self._selection_artists = []
             # Home (toolbar) goes to the full range; then restore the user's zoom.
             self.toolbar.update()
@@ -369,6 +389,7 @@ class PlotPanel(QWidget):
         self.figure.clear()
         self.s_axes = []
         self._floor_hits = []
+        self._layout_axes = []
         self.figure.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
         self.layout_check.setVisible(False)
         self.canvas.draw_idle()
@@ -440,12 +461,13 @@ class PlotPanel(QWidget):
     def _on_click(self, event) -> None:
         if event.button != 1 or self.toolbar.mode != "":  # not zooming or panning
             return
+        shift = _shift_held(event)
         if event.inaxes in self.s_axes and event.xdata is not None:
-            self.s_clicked.emit(float(event.xdata))
+            self.s_clicked.emit(float(event.xdata), shift and event.inaxes in self._layout_axes)
             return
         for hits in self._floor_hits:
             if event.inaxes is hits.ax:
                 found = hits.element_at(event.x, event.y)
                 if found is not None:
-                    self.element_clicked.emit(*found)
+                    self.element_clicked.emit(*found, shift)
                 return

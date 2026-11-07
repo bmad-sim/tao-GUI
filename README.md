@@ -108,9 +108,12 @@ element at that s. The element is shaded in every plot and selected in the
 Lattice window, where its attributes are shown. Selecting an element in the
 Lattice window shades it in the plots too.
 
-In a floor plan, click an element to open a window with its attributes (editable,
-issuing `set ele`, as in the Lattice window). The element is also selected in the
-Lattice window and shaded in the plots against s.
+In a floor plan, clicking an element selects it in the same way.
+
+**Shift-click** an element in a lattice layout (the strip under a plot, or the
+lat_layout plot) or in a floor plan to also open a window with its attributes.
+They are editable, issuing `set ele`, as in the Lattice window. Shift-clicking other
+plots selects the element without opening a window.
 
 ## Install
 

@@ -256,12 +256,19 @@ class ParameterWindow(QMainWindow):
             height = min(height, area.height() - frame_h)
         self.resize(width, height)
 
+    _closed = False
+
+    def _if_open(self, callback):
+        """Wrap a worker callback so it is skipped once this window has closed."""
+        return lambda result: None if self._closed else callback(result)
+
     def refresh(self) -> None:
         if not self.client.is_running:
             return
         kind, name = self.kind, self.name
         self.client.call(lambda t: fetch_parameters(t, kind, name),
-                         on_done=self._show, on_error=self._show_error)
+                         on_done=self._if_open(self._show),
+                         on_error=self._if_open(self._show_error))
 
     def _show(self, params: List[Parameter]) -> None:
         self.table.set_parameters(params)
@@ -300,6 +307,11 @@ class ParameterWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         event.accept()
+        self._closed = True  # replies still in flight are ignored (the window is deleted)
+        try:
+            self.client.state_changed.disconnect(self.refresh)
+        except (RuntimeError, TypeError):
+            pass
         if not self.gui.closing:
             self.gui.remove_parameter_window(self)
 
@@ -344,12 +356,19 @@ class ElementWindow(QMainWindow):
         client.state_changed.connect(self.refresh)
         self.refresh()
 
+    _closed = False
+
+    def _if_open(self, callback):
+        """Wrap a worker callback so it is skipped once this window has closed."""
+        return lambda result: None if self._closed else callback(result)
+
     def refresh(self) -> None:
         if not self.client.is_running:
             return
         name = self.name
         self.client.call(lambda t: fetch_attributes(t, name),
-                         on_done=self._show, on_error=self._show_error)
+                         on_done=self._if_open(self._show),
+                         on_error=self._if_open(self._show_error))
 
     def _show(self, info: Dict[str, Any]) -> None:
         head = info["head"]
@@ -393,5 +412,10 @@ class ElementWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         event.accept()
+        self._closed = True  # replies still in flight are ignored (the window is deleted)
+        try:
+            self.client.state_changed.disconnect(self.refresh)
+        except (RuntimeError, TypeError):
+            pass
         if not self.gui.closing:
             self.gui.remove_parameter_window(self)
