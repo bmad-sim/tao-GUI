@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt
 
 from conftest import wait_idle
+from tao_gui import plots
 
 N_ELEMENTS = 66  # BEGINNING + 8 cells * 8 elements + END
 QF = 1  # element index of the first QF
@@ -442,3 +443,30 @@ def test_layout_toggle_only_for_plots_with_layout(gui, qtbot):
     panel.layout_check.setChecked(False)
     wait_idle(qtbot, gui.client)
     assert not panel.layout_check.isHidden() and len(panel.figure.axes) == 1
+
+
+def test_floor_plan_window_is_trimmed_to_fit(gui, qtbot):
+    window = gui.plot_windows[0]
+    panel = window.panel
+    window.resize(780, 600)
+    qtbot.wait(50)
+    panel.set_template("floor_plan")  # equal aspect: the plot can't use the full width
+    wait_idle(qtbot, gui.client)
+    qtbot.wait(50)
+    assert window.width() < 700
+    # No blank bands beyond the slack, unless the plot bar needs the width.
+    panel.canvas.draw()
+    ax = panel.figure.axes[0]
+    spare = (ax.get_position(original=True).width - ax.get_position().width) * panel.canvas.width()
+    bar_limited = panel.width() <= panel._bar.sizeHint().width() + 4
+    assert spare <= 2 * plots.ASPECT_SLACK or bar_limited
+    assert panel.toolbar.width() >= panel.toolbar.sizeHint().width()  # all buttons showing
+
+    # Only done when the template is first drawn: a size the user picks is kept.
+    window.resize(760, 600)
+    gui.act_refresh.trigger()
+    wait_idle(qtbot, gui.client)
+    assert window.width() == 760
+    panel.set_template("beta")  # beta is not fixed-aspect: no trimming
+    wait_idle(qtbot, gui.client)
+    assert window.width() == 760
