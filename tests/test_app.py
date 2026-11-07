@@ -382,14 +382,40 @@ def test_parameter_window_columns_toggle(gui, qtbot):
     w = run_sync(qtbot, gui.client, lambda t: t.data_d_array("twiss", "beta", ix_uni=1)[0]["weight"])
     assert w == 4
 
-    height = window.height()
+    assert fits(qtbot, window)
+    width, height = window.width(), window.height()
     window.two_columns.setChecked(False)
     assert table.columnCount() == 2 and table.rowCount() == n
     assert table.value_item("weight").text() == "4"
-    assert window.height() == height
+    # The window refits: narrower and taller (up to the screen height).
+    assert fits(qtbot, window)
+    assert window.width() < width and window.height() > height
     assert QSettings().value(TWO_COLUMNS_KEY, type=bool) is False
 
     # New windows use the last choice.
     other = gui.show_parameters("var", "quad[1]")
     qtbot.addWidget(other)
     assert not other.two_columns.isChecked() and other.table.columnCount() == 2
+    wait_idle(qtbot, gui.client)
+    assert fits(qtbot, other)
+
+    # Back to two columns: the window refits with no scroll bar.
+    window.two_columns.setChecked(True)
+    assert fits(qtbot, window) and not table.verticalScrollBar().isVisible()
+
+
+def fits(qtbot, window) -> bool:
+    """The parameter table shows every cell: no scroll bars, no clipped columns.
+
+    A window as tall as the screen may still need a vertical scroll bar.
+    """
+    qtbot.wait(50)  # let the resize and layout settle
+    table = window.table
+    max_height = window.screen().availableGeometry().height()
+    at_screen_height = window.frameGeometry().height() >= max_height - 1
+    if table.verticalScrollBar().isVisible() and not at_screen_height:
+        return False
+    if table.horizontalScrollBar().isVisible():
+        return False
+    return all(table.columnWidth(c) >= table.sizeHintForColumn(c)
+               for c in range(table.columnCount()))

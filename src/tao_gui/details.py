@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, List
 
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import QSettings, QSize, Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -32,8 +33,7 @@ if TYPE_CHECKING:
 
 KIND_TITLES = {"data": "Datum", "var": "Variable"}
 TWO_COLUMNS_KEY = "parameters/two_columns"  # QSettings: last choice, used for new windows
-ONE_COLUMN_SIZE = (420, 640)
-TWO_COLUMN_SIZE = (760, 480)
+VALUE_PADDING = 24  # extra width for value columns, so edited values have room
 
 
 @dataclass(frozen=True)
@@ -112,6 +112,17 @@ class ParameterTable(QTableWidget):
         for k in range(self.pairs):
             header.setSectionResizeMode(2 * k, QHeaderView.Interactive)
             header.setSectionResizeMode(2 * k + 1, QHeaderView.Stretch)
+
+    def content_size(self) -> QSize:
+        """Size the table needs to show every row and column without scrolling."""
+        header = self.horizontalHeader()
+        width = 2 * self.frameWidth()
+        for col in range(self.columnCount()):
+            w = max(self.sizeHintForColumn(col), header.sectionSizeHint(col))
+            width += w + (VALUE_PADDING if col % 2 else 0)
+        height = (2 * self.frameWidth() + header.height()
+                  + self.rowCount() * self.verticalHeader().defaultSectionSize())
+        return QSize(width, height)
 
     def _cell(self, index: int) -> tuple:
         """(row, value column) of parameter ``index``."""
@@ -213,18 +224,37 @@ class ParameterWindow(QMainWindow):
         layout.addWidget(self.table, 1)
         self.setCentralWidget(central)
         gui.build_menus(self.menuBar())
-        self.resize(*(TWO_COLUMN_SIZE if two else ONE_COLUMN_SIZE))
+        self.resize(400, 300)  # until the parameters arrive; then fit_to_contents
+        self._fitted = False
 
         client.state_changed.connect(self.refresh)
         self.refresh()
 
     def _on_two_columns(self, on: bool) -> None:
-        """Switch layouts; the window keeps its height and changes its width."""
         QSettings().setValue(TWO_COLUMNS_KEY, on)
         self.table.set_pairs(2 if on else 1)
-        if not (self.isMaximized() or self.isFullScreen()):
-            width = (TWO_COLUMN_SIZE if on else ONE_COLUMN_SIZE)[0]
-            self.resize(width, self.height())
+        self.fit_to_contents()
+
+    def fit_to_contents(self) -> None:
+        """Resize so the whole table shows without scrolling (within the screen)."""
+        if self.isMaximized() or self.isFullScreen() or not self.table.params:
+            return
+        central = self.centralWidget()
+        central.layout().activate()
+        need = self.table.content_size()
+        # Everything around the table (menu bar, header line, margins, status bar).
+        extra_w = self.width() - self.table.width()
+        extra_h = self.height() - self.table.height()
+        width = max(need.width() + extra_w, central.layout().minimumSize().width())
+        height = need.height() + extra_h
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            area = screen.availableGeometry()
+            frame_w = self.frameGeometry().width() - self.width()
+            frame_h = self.frameGeometry().height() - self.height()
+            width = min(width, area.width() - frame_w)
+            height = min(height, area.height() - frame_h)
+        self.resize(width, height)
 
     def refresh(self) -> None:
         if not self.client.is_running:
@@ -235,6 +265,9 @@ class ParameterWindow(QMainWindow):
 
     def _show(self, params: List[Parameter]) -> None:
         self.table.set_parameters(params)
+        if not self._fitted and params:
+            self._fitted = True  # only on opening; later refreshes keep the user's size
+            self.fit_to_contents()
         values = {p.name: p.value for p in params}
         if self.kind == "data":
             summary = f"{values.get('data_type', '')} &nbsp; at {values.get('ele_name', '')}"
