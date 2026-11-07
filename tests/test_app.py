@@ -304,7 +304,6 @@ def test_double_click_datum_opens_parameters(gui, qtbot):
     assert not (table.editTriggers() & table.EditTrigger.DoubleClicked)
     table.cellDoubleClicked.emit(1, column(table, "Element"))
     window = gui.parameter_windows[("data", "1@twiss.beta[2]")]
-    qtbot.addWidget(window)
     assert window.isVisible()
     assert window.windowTitle() == "Datum: 1@twiss.beta[2]"
     wait_idle(qtbot, gui.client)
@@ -339,7 +338,6 @@ def test_double_click_variable_opens_parameters(gui, qtbot):
     table = gui.variables.table
     table.cellDoubleClicked.emit(0, 0)
     window = gui.parameter_windows[("var", "quad[1]")]
-    qtbot.addWidget(window)
     wait_idle(qtbot, gui.client)
     assert window.windowTitle() == "Variable: quad[1]"
     assert "QF[K1]" in window.header.text()
@@ -364,7 +362,6 @@ def test_parameter_window_columns_toggle(gui, qtbot):
     from tao_gui.details import TWO_COLUMNS_KEY
 
     window = gui.show_parameters("data", "1@twiss.beta[1]")
-    qtbot.addWidget(window)
     wait_idle(qtbot, gui.client)
     table = window.table
     n = len(table.params)
@@ -395,7 +392,6 @@ def test_parameter_window_columns_toggle(gui, qtbot):
 
     # New windows use the last choice.
     other = gui.show_parameters("var", "quad[1]")
-    qtbot.addWidget(other)
     assert not other.two_columns.isChecked() and other.table.columnCount() == 2
     wait_idle(qtbot, gui.client)
     assert fits(qtbot, other)
@@ -470,3 +466,47 @@ def test_floor_plan_window_is_trimmed_to_fit(gui, qtbot):
     panel.set_template("beta")  # beta is not fixed-aspect: no trimming
     wait_idle(qtbot, gui.client)
     assert window.width() == 760
+
+
+def test_floor_plan_click_opens_element_window(gui, qtbot):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    window = gui.plot_windows[0]
+    panel = window.panel
+    window.resize(700, 600)
+    panel.set_template("floor_plan")
+    wait_idle(qtbot, gui.client)
+    qtbot.wait(50)
+    panel.canvas.draw()
+    hits = panel._floor_hits[0]
+    k = [tuple(i) for i in hits.ids].index((0, QF))
+    x, y = hits.ax.transData.transform((hits.p1[k] + hits.p2[k]) / 2)
+    assert hits.element_at(x, y) == (0, QF)
+    assert hits.element_at(x + 200, y + 200) is None  # empty space inside the ring
+
+    # A real mouse click at the element (Qt's y runs down; matplotlib's runs up).
+    ratio = panel.canvas.devicePixelRatioF()
+    QTest.mouseClick(panel.canvas, Qt.LeftButton,
+                     pos=QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio)))
+    element = gui.parameter_windows[("ele", f"0>>{QF}")]
+    wait_idle(qtbot, gui.client)
+    assert element.isVisible()
+    assert element.windowTitle() == "Element: QF"
+    assert "Quadrupole" in element.header.text()
+    assert gui.lattice.selected_ix == QF and gui.selected.ix == QF
+
+    # Attributes are editable, as in the Lattice window.
+    rows = {element.table.item(r, 0).text(): r for r in range(element.table.rowCount())}
+    element.table.item(rows["K1"], 1).setText("0.32")
+    wait_idle(qtbot, gui.client)
+    k1 = run_sync(qtbot, gui.client, lambda t: t.ele_gen_attribs(f"0>>{QF}")["K1"])
+    assert abs(k1 - 0.32) < 1e-12
+
+    # In zoom mode a click does not select.
+    element.close()
+    panel.toolbar.zoom()
+    QTest.mouseClick(panel.canvas, Qt.LeftButton,
+                     pos=QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio)))
+    assert ("ele", f"0>>{QF}") not in gui.parameter_windows
+    panel.toolbar.zoom()

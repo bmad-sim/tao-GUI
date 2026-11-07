@@ -9,7 +9,7 @@ issues ``set data <datum>|<name> = <value>`` or ``set var <var>|<name> = <value>
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from PySide6.QtCore import QSettings, QSize, Qt, Signal
 from PySide6.QtGui import QGuiApplication
@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .lattice import format_value
+from .lattice import AttributeTable, fetch_attributes, format_value
 from .tao_worker import TaoClient
 
 if TYPE_CHECKING:
@@ -297,6 +297,99 @@ class ParameterWindow(QMainWindow):
 
     def set_lattice_name(self, lattice: str) -> None:
         """Titles name the datum or variable only."""
+
+    def closeEvent(self, event) -> None:
+        event.accept()
+        if not self.gui.closing:
+            self.gui.remove_parameter_window(self)
+
+
+class ElementWindow(QMainWindow):
+    """Attributes of one lattice element (opened by clicking it in a floor plan).
+
+    Shares the Lattice window's attribute table: editing a value issues ``set ele``.
+    ``kind`` and ``name`` match ``ParameterWindow`` so the GUI tracks both alike.
+    """
+
+    command_output = Signal(str, list)
+    kind = "ele"
+
+    def __init__(self, gui: "TaoGui", client: TaoClient, branch: int, index: int) -> None:
+        super().__init__()
+        self.gui = gui
+        self.client = client
+        self.name = f"{branch}>>{index}"
+        self.setObjectName("element_window")
+        self.setWindowTitle(f"Element: {self.name}")
+
+        self.header = QLabel()
+        self.header.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.table = AttributeTable()
+        self.table.edited.connect(self._on_edited)
+        # Same look as the datum and variable windows: compact rows, no grid.
+        self.table.setShowGrid(False)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.table.verticalHeader().setDefaultSectionSize(self.table.fontMetrics().height() + 4)
+        self._fitted = False
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.addWidget(self.header)
+        layout.addWidget(self.table, 1)
+        self.setCentralWidget(central)
+        gui.build_menus(self.menuBar())
+        self.resize(460, 560)
+
+        client.state_changed.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self) -> None:
+        if not self.client.is_running:
+            return
+        name = self.name
+        self.client.call(lambda t: fetch_attributes(t, name),
+                         on_done=self._show, on_error=self._show_error)
+
+    def _show(self, info: Dict[str, Any]) -> None:
+        head = info["head"]
+        self.setWindowTitle(f"Element: {head['name']}")
+        self.header.setText(
+            f"<b>{head['name']}</b> &nbsp; {head['key']} &nbsp; "
+            f"index {self.name} &nbsp; s = {head['s']:.6f} m")
+        self.table.set_attributes(info["attribs"])
+        if not self._fitted:
+            self._fitted = True  # only on opening; later refreshes keep the user's size
+            self._fit_height()
+
+    def _fit_height(self) -> None:
+        """Make the window tall enough for every attribute (within the screen)."""
+        self.centralWidget().layout().activate()
+        table = self.table
+        need = (2 * table.frameWidth() + table.horizontalHeader().height()
+                + table.rowCount() * table.verticalHeader().defaultSectionSize())
+        height = self.height() - table.height() + need
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            frame = self.frameGeometry().height() - self.height()
+            height = min(height, screen.availableGeometry().height() - frame)
+        self.resize(self.width(), height)
+
+    def _show_error(self, message: str) -> None:
+        self.header.setText(f"<b>{self.name}</b> &nbsp; <i>{message}</i>")
+        self.table.set_attributes({})
+
+    def _on_edited(self, attribute: str, value: str) -> None:
+        command = f"set ele {self.name} {attribute} = {value}"
+        self.client.cmd(command, on_done=lambda out: self.command_output.emit(command, out))
+
+    def show_and_raise(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def set_lattice_name(self, lattice: str) -> None:
+        """Titles name the element only."""
 
     def closeEvent(self, event) -> None:
         event.accept()

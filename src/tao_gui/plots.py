@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Tuple
 
+import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 from PySide6.QtCore import QSize, Signal
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
 from .tao_worker import TaoClient, TaoWorker
 
 LAYOUT_TEMPLATE = "lat_layout"
+FLOOR_CLICK_PIXELS = 5  # how near (pixels) a click must be to a thin floor-plan element
 ASPECT_SLACK = 8  # pixels left around a fixed-aspect plot when trimming the window
 # Height of each graph and of the lattice layout strip, relative to each other.
 GRAPH_RATIO = 3
@@ -130,6 +132,43 @@ def draw_plot(figure: Figure, data: PlotData) -> list:
     return list(axes) if s_plot else []
 
 
+class FloorPlanHits:
+    """Finds the floor-plan element under a click.
+
+    Each element is reduced to its centre line (x1, y1) → (x2, y2) and half width.
+    A click hits the nearest element whose line is within its half width, or
+    within ``FLOOR_CLICK_PIXELS`` for thin elements. Distances are measured in
+    pixels, so this works at any zoom. Vectorized: fast for thousands of elements.
+    """
+
+    def __init__(self, ax, elements) -> None:
+        self.ax = ax
+        rows = [(e.branch_index, e.index, e.shape.x1, e.shape.y1, e.shape.x2, e.shape.y2,
+                 max(abs(e.shape.off1), abs(e.shape.off2)))
+                for e in elements if e.shape is not None]
+        table = np.array(rows, dtype=float).reshape(-1, 7)
+        self.ids = table[:, :2].astype(int)
+        self.p1, self.p2, self.half = table[:, 2:4], table[:, 4:6], table[:, 6]
+
+    def element_at(self, x_pixel: float, y_pixel: float) -> Optional[Tuple[int, int]]:
+        """(branch, element index) at display point (x_pixel, y_pixel), or None."""
+        if len(self.ids) == 0:
+            return None
+        to_pixels = self.ax.transData.transform
+        a, b = to_pixels(self.p1), to_pixels(self.p2)
+        click = np.array([x_pixel, y_pixel])
+        ab = b - a
+        length2 = np.einsum("ij,ij->i", ab, ab)
+        t = np.clip(np.einsum("ij,ij->i", click - a, ab) / np.where(length2 > 0, length2, 1), 0, 1)
+        distance = np.hypot(*(a + t[:, None] * ab - click).T)
+        scale = abs(to_pixels((1, 0))[0] - to_pixels((0, 0))[0])  # pixels per data unit
+        within = distance <= np.maximum(self.half * scale, FLOOR_CLICK_PIXELS)
+        if not within.any():
+            return None
+        best = np.flatnonzero(within)[np.argmin(distance[within])]
+        return int(self.ids[best, 0]), int(self.ids[best, 1])
+
+
 class PlotPanel(QWidget):
     """One plot area showing a single Tao plot template.
 
@@ -140,11 +179,14 @@ class PlotPanel(QWidget):
         The user clicked an s-plot at this s (not in zoom/pan mode).
     s_range_changed(object)
         The user changed the s range (zoom, pan, home): an (s0, s1) tuple.
+    element_clicked(int, int)
+        The user clicked an element of a floor plan: (branch, element index).
     """
 
     template_changed = Signal(str)
     s_clicked = Signal(float)
     s_range_changed = Signal(object)
+    element_clicked = Signal(int, int)
 
     def __init__(self, client: TaoClient, template: str = "", parent=None) -> None:
         super().__init__(parent)
@@ -155,6 +197,7 @@ class PlotPanel(QWidget):
         self.selection: Optional[Range] = None
         self.user_s_range: Optional[Range] = None
         self._selection_artists: list = []
+        self._floor_hits: List[FloorPlanHits] = []
         self._refresh_pending = False
         self._refreshing = False
         self._drawing = False
@@ -272,6 +315,9 @@ class PlotPanel(QWidget):
         self._drawing = True
         try:
             self.s_axes = draw_plot(self.figure, data)
+            self._floor_hits = [FloorPlanHits(ax, g.elements)
+                                for ax, g in zip(self.figure.axes, data.graphs)
+                                if type(g).__name__ == "FloorPlanGraph"]
             self._selection_artists = []
             # Home (toolbar) goes to the full range; then restore the user's zoom.
             self.toolbar.update()
@@ -322,6 +368,7 @@ class PlotPanel(QWidget):
     def _on_error(self, message: str) -> None:
         self.figure.clear()
         self.s_axes = []
+        self._floor_hits = []
         self.figure.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
         self.layout_check.setVisible(False)
         self.canvas.draw_idle()
@@ -391,10 +438,14 @@ class PlotPanel(QWidget):
             self._selection_artists.append(artist)
 
     def _on_click(self, event) -> None:
-        if (
-            event.button == 1
-            and self.toolbar.mode == ""  # not zooming or panning
-            and event.inaxes in self.s_axes
-            and event.xdata is not None
-        ):
+        if event.button != 1 or self.toolbar.mode != "":  # not zooming or panning
+            return
+        if event.inaxes in self.s_axes and event.xdata is not None:
             self.s_clicked.emit(float(event.xdata))
+            return
+        for hits in self._floor_hits:
+            if event.inaxes is hits.ax:
+                found = hits.element_at(event.x, event.y)
+                if found is not None:
+                    self.element_clicked.emit(*found)
+                return
