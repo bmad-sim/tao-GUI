@@ -8,6 +8,8 @@ import signal
 import sys
 from typing import List, Optional
 
+APP_NAME = "Tao GUI"
+
 USAGE = """\
 usage: tao-gui [tao arguments]
 
@@ -31,8 +33,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     from PySide6.QtWidgets import QApplication
 
+    from . import macos
     from .application import TaoGui
 
+    macos.set_app_name(APP_NAME)  # menu bar shows "Tao GUI", not "python3.x"
     app = QApplication.instance() or QApplication([sys.argv[0]])
     app.setOrganizationName("bmad-sim")
     app.setApplicationName("tao-gui")
