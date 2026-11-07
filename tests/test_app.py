@@ -304,7 +304,6 @@ def test_double_click_datum_opens_parameters(gui, qtbot):
     assert not (table.editTriggers() & table.EditTrigger.DoubleClicked)
     table.cellDoubleClicked.emit(1, column(table, "Element"))
     window = gui.parameter_windows[("data", "1@twiss.beta[2]")]
-    qtbot.addWidget(window)
     assert window.isVisible()
     assert window.windowTitle() == "Datum: 1@twiss.beta[2]"
     wait_idle(qtbot, gui.client)
@@ -339,7 +338,6 @@ def test_double_click_variable_opens_parameters(gui, qtbot):
     table = gui.variables.table
     table.cellDoubleClicked.emit(0, 0)
     window = gui.parameter_windows[("var", "quad[1]")]
-    qtbot.addWidget(window)
     wait_idle(qtbot, gui.client)
     assert window.windowTitle() == "Variable: quad[1]"
     assert "QF[K1]" in window.header.text()
@@ -364,7 +362,6 @@ def test_parameter_window_columns_toggle(gui, qtbot):
     from tao_gui.details import TWO_COLUMNS_KEY
 
     window = gui.show_parameters("data", "1@twiss.beta[1]")
-    qtbot.addWidget(window)
     wait_idle(qtbot, gui.client)
     table = window.table
     n = len(table.params)
@@ -395,7 +392,6 @@ def test_parameter_window_columns_toggle(gui, qtbot):
 
     # New windows use the last choice.
     other = gui.show_parameters("var", "quad[1]")
-    qtbot.addWidget(other)
     assert not other.two_columns.isChecked() and other.table.columnCount() == 2
     wait_idle(qtbot, gui.client)
     assert fits(qtbot, other)
@@ -494,7 +490,6 @@ def test_floor_plan_click_opens_element_window(gui, qtbot):
     QTest.mouseClick(panel.canvas, Qt.LeftButton,
                      pos=QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio)))
     element = gui.parameter_windows[("ele", f"0>>{QF}")]
-    qtbot.addWidget(element)
     wait_idle(qtbot, gui.client)
     assert element.isVisible()
     assert element.windowTitle() == "Element: QF"
