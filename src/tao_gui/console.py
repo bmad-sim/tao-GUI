@@ -1,12 +1,28 @@
-"""Tao command console: a command line with history and an output pane."""
+"""The Main window's contents: a command-file box above the Tao console.
+
+The console is a command line with history and an output pane. The command-file
+box runs Tao's ``call`` command and keeps a history of the files called.
+"""
 
 from __future__ import annotations
 
+import os
+import shlex
 from typing import List
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QFont, QFontDatabase, QKeyEvent, QTextCharFormat, QTextCursor, QColor
-from PySide6.QtWidgets import QLineEdit, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .tao_worker import TaoClient
 
@@ -92,3 +108,96 @@ class ConsoleWidget(QWidget):
         cursor.insertText(text, fmt)
         self.output.setTextCursor(cursor)
         self.output.ensureCursorVisible()
+
+
+CALL_HISTORY_KEY = "call/history"  # QSettings: command files called, latest first
+MAX_CALL_HISTORY = 20
+
+
+class CallFileBox(QGroupBox):
+    """Run a Tao command file (``call <file> [args]``), with a history of past calls.
+
+    The field takes the file name and any arguments, as Tao's ``call`` command does.
+    Pick a past call from the list, or Browse… for a file. Relative paths are
+    relative to Tao's working directory.
+    """
+
+    def __init__(self, console: "ConsoleWidget", parent=None) -> None:
+        super().__init__("Command file", parent)
+        self.console = console
+
+        self.combo = QComboBox(editable=True)
+        self.combo.setInsertPolicy(QComboBox.NoInsert)
+        # Long entries in the history must not widen the window.
+        self.combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo.setMinimumContentsLength(30)
+        self.combo.lineEdit().setPlaceholderText("File to call, and any arguments")
+        self.combo.lineEdit().returnPressed.connect(self.call)
+        self.combo.setToolTip("Runs Tao's \"call\" command: file name, then any arguments")
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self.browse)
+        self.call_button = QPushButton("Call")
+        self.call_button.setDefault(True)
+        self.call_button.clicked.connect(self.call)
+
+        layout = QHBoxLayout(self)
+        layout.addWidget(self.combo, 1)
+        layout.addWidget(browse)
+        layout.addWidget(self.call_button)
+        self._load_history()
+
+    # History ------------------------------------------------------------
+    @staticmethod
+    def history() -> List[str]:
+        value = QSettings().value(CALL_HISTORY_KEY, [])
+        if isinstance(value, str):
+            value = [value]
+        return [str(v) for v in value or []]
+
+    def _load_history(self) -> None:
+        text = self.combo.currentText()
+        self.combo.clear()
+        self.combo.addItems(self.history())
+        self.combo.setCurrentText(text)
+
+    def _remember(self, text: str) -> None:
+        history = [text] + [h for h in self.history() if h != text]
+        QSettings().setValue(CALL_HISTORY_KEY, history[:MAX_CALL_HISTORY])
+        self._load_history()
+
+    # Actions ------------------------------------------------------------
+    def browse(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Call command file", os.getcwd(),
+                                              "Tao command files (*.tao *.cmd);;All files (*)")
+        if path:
+            self.combo.setCurrentText(self._relative(path))
+            self.combo.lineEdit().setFocus()
+
+    @staticmethod
+    def _relative(path: str) -> str:
+        """Path relative to Tao's working directory when it is inside it; quoted if needed."""
+        rel = os.path.relpath(path, os.getcwd())
+        if not rel.startswith(".."):
+            path = rel
+        return shlex.quote(path)
+
+    def call(self) -> None:
+        text = self.combo.currentText().strip()
+        if not text:
+            return
+        self._remember(text)
+        self.combo.setCurrentText(text)
+        self.console.run_command(f"call {text}")
+
+
+class MainWidget(QWidget):
+    """Main window contents: the command-file box on top, the console below."""
+
+    def __init__(self, call_box: CallFileBox, console: ConsoleWidget, parent=None) -> None:
+        super().__init__(parent)
+        self.call_box = call_box
+        self.console = console
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.addWidget(call_box)
+        layout.addWidget(console, 1)
