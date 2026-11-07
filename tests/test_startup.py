@@ -242,3 +242,33 @@ def test_saved_duplicates_are_dropped_on_load(fresh_gui):
     assert len(recent) == 1 and recent[0].rf_on is True
     fresh_gui.startup._load_recent()
     assert fresh_gui.startup.recent_combo.count() == 1
+
+
+def test_no_arguments_always_opens_startup_window(qtbot, monkeypatch):
+    """Even with a tao.init in the current directory, Tao is not started at once:
+    the startup window opens, ready to start Tao with that tao.init."""
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    from tao_gui.app import start
+    from tao_gui.application import TaoGui
+
+    QCoreApplication.setOrganizationName("bmad-sim-tests")
+    QCoreApplication.setApplicationName("tao-gui-tests")
+    QSettings().clear()
+    monkeypatch.chdir(FILES)  # has a tao.init
+    gui = TaoGui(restore=False)
+    qtbot.addWidget(gui.startup)
+    try:
+        start(gui, [])
+        assert visible_windows() == [gui.startup]
+        assert not gui.client.is_running
+        assert gui.startup.start_button.isEnabled()
+        assert "tao.init" in gui.startup.command_label.text()
+
+        start_button_click = gui.startup.start_button.click
+        start_button_click()
+        qtbot.waitUntil(lambda: gui.client.is_running, timeout=60_000)
+        wait_idle(qtbot, gui.client)
+        assert gui.windows["console"].isVisible() and not gui.startup.isVisible()
+    finally:
+        gui.shutdown(save=False)
