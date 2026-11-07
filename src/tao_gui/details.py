@@ -82,6 +82,11 @@ class ParameterTable(QTableWidget):
         self.verticalHeader().setVisible(False)
         self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        # Compact rows; no grid, so the only rule is the one under the header.
+        self.setShowGrid(False)
+        self.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 4)
         self.params: List[Parameter] = []
         self._loading = False
         self.itemChanged.connect(self._on_item_changed)
@@ -118,8 +123,6 @@ class ParameterTable(QTableWidget):
             item.setData(Qt.UserRole, text)
             if p.settable:
                 flags |= Qt.ItemIsEditable
-            if p.type in ("REAL", "INT", "INUM"):
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         if not p.settable:
             item.setForeground(self.palette().placeholderText())
         item.setFlags(flags)
