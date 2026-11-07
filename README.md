@@ -67,6 +67,10 @@ remembered between sessions; Window > Tile Windows lays them out again.
   (`key_bound`, `key_delta`), ten at a time as in Tao's single mode. Step them with
   the buttons or Tao's keys (1…0 up, q…p down, Shift for ×10; arrows change the bank
   and scale the deltas), scale all deltas, and save and restore values.
+- **Show** (Tao > Show, Ctrl+9): any of Tao's `show` subcommands. Pick one from the
+  list, add arguments ("Use selected" fills in the selected element), and Show;
+  "Update automatically" re-runs it after every change to Tao's state, and Help
+  shows Tao's help for the subcommand. Past commands are kept in the list.
 - **Optimizer:** choose the optimizer and cycles/loops, run it (Tao > Run Optimizer,
   Ctrl+R), and see the merit and the `show merit` table.
 
@@ -210,4 +214,5 @@ The tests start Tao on the small FODO ring in `tests/files` (with two data and t
 | `change.py` | Change window (`change` command) |
 | `set_window.py` | Set window (`set` command) |
 | `single_mode.py` | Single Mode window (key-bound variables) |
+| `show_window.py` | Show window (`show` command) |
 | `console.py` | Main window contents: command-file box and Tao console |
