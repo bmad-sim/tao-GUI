@@ -218,6 +218,13 @@ def test_recent_has_no_duplicates(fresh_gui):
     recent = load_recent()
     assert len(recent) == 2 and recent[0].init_file == ""
 
+    # Same name, different configuration (an extra file): still a duplicate.
+    save_recent(StartupOptions(directory=d, init_file="tao.init", data_file="fodo.bmad"))
+    recent = load_recent()
+    assert len(recent) == 2 and recent[0].data_file == "fodo.bmad"
+    names = [r.label() for r in recent]
+    assert len(set(names)) == len(names)
+
 
 def test_saved_duplicates_are_dropped_on_load(fresh_gui):
     import json
@@ -228,7 +235,8 @@ def test_saved_duplicates_are_dropped_on_load(fresh_gui):
 
     d = str(FILES)
     entries = [{"directory": d, "init_file": "tao.init", "rf_on": True},
-               {"directory": d, "init_file": "tao.init", "rf_on": False}]
+               {"directory": d, "init_file": "tao.init", "rf_on": False},
+               {"directory": d + os.sep, "init_file": "tao.init", "beam_file": "x"}]
     QSettings().setValue("startup/recent", json.dumps(entries))
     recent = load_recent()
     assert len(recent) == 1 and recent[0].rf_on is True

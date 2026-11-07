@@ -270,25 +270,12 @@ class StartupOptions:
             out.append(f"Extra arguments: {ex}")
         return out
 
-    def recent_key(self) -> Tuple[str, ...]:
-        """Identifies a startup in the Recent list: the directory and the files used.
-
-        Options are not part of it, so starting the same files again replaces the
-        old entry. Paths are resolved, so "tao.init" given by name and found in the
-        directory, or a relative and an absolute path, count as the same.
-        """
-        def resolve(path: str) -> str:
-            return os.path.normcase(os.path.realpath(self._abs(path))) if path else ""
-
-        files = {name: getattr(self, name) for name, *_ in FILE_FIELDS}
-        if self.uses_directory_init():
-            files["init_file"] = "tao.init"
-        return (resolve(self.directory or "."), *(resolve(files[n]) for n in sorted(files)))
-
     def label(self) -> str:
+        """Name shown in the Recent list; entries with the same name are duplicates."""
         main = self.init_file or self.lattice_file or (
             "tao.init" if self.uses_directory_init() else "")
-        return f"{os.path.basename(main)} — {self.directory}" if main else self.directory
+        directory = os.path.normpath(self.directory) if self.directory else ""
+        return f"{os.path.basename(main)} — {directory}" if main else directory
 
     @classmethod
     def from_dict(cls, data: Dict) -> "StartupOptions":
@@ -318,11 +305,11 @@ def load_recent() -> List[StartupOptions]:
 
 
 def _unique(recent: List[StartupOptions]) -> List[StartupOptions]:
-    """Keep only the first (latest) entry for each ``recent_key``."""
+    """Keep only the first (latest) entry for each name (``label``)."""
     seen = set()
     out = []
     for opts in recent:
-        key = opts.recent_key()
+        key = opts.label()
         if key not in seen:
             seen.add(key)
             out.append(opts)
