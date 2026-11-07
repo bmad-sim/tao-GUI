@@ -272,3 +272,74 @@ def test_no_arguments_always_opens_startup_window(qtbot, monkeypatch):
         assert gui.windows["console"].isVisible() and not gui.startup.isVisible()
     finally:
         gui.shutdown(save=False)
+
+
+def test_new_file_fields_and_lattice_options_to_args():
+    opts = StartupOptions(directory=str(FILES), init_file="tao.init",
+                          beam_init_position_file="pos.dat", var_file="v.init",
+                          building_wall_file="wall.dat", reverse=True,
+                          slice_lattice="q1:q35", start_branch_at="ip_l0",
+                          extra_commands="set global n_opti_cycles = 50;  ; show merit")
+    args = opts.tao_args()
+    for flag, value in (("-beam_init_position_file", "pos.dat"), ("-var_file", "v.init"),
+                        ("-building_wall_file", "wall.dat"), ("-slice_lattice", "q1:q35"),
+                        ("-start_branch_at", "ip_l0")):
+        assert args[args.index(flag) + 1] == value
+    assert "-reverse" in args
+    assert "-command" not in args  # extra commands are run by the GUI after startup
+    assert opts.set_commands()[-2:] == ["set global n_opti_cycles = 50", "show merit"]
+
+
+def test_skip_init_and_startup_files():
+    # tests/files has a tao.init; "Use init file" off ignores it (and any init file given).
+    opts = StartupOptions(directory=str(FILES), init_file="tao.init", startup_file="s.tao",
+                          use_init=False, run_startup=False)
+    assert opts.problems() == ["Without an init file, choose a lattice file."]
+    assert not opts.uses_directory_init() and opts.init_path() is None
+    opts.lattice_file = "fodo.bmad"
+    assert opts.problems() == []  # missing s.tao doesn't matter: it is not used
+    args = opts.tao_args()
+    assert "-noinit" in args and "-nostartup" in args
+    assert "-init_file" not in args and "-startup_file" not in args
+    assert opts.label().startswith("fodo.bmad")
+
+
+def test_start_without_init_file_with_lattice_options(fresh_gui, qtbot):
+    gui = fresh_gui
+    window = gui.startup
+    window.set_options(StartupOptions(directory=str(FILES)))
+    window.checks["use_init"].setChecked(False)
+    assert not window.files["init_file"].isEnabled()
+    assert not window.start_button.isEnabled()  # needs a lattice file now
+    window.files["lattice_file"].set_text("fodo.bmad")
+    window.texts["start_branch_at"].setText("5")  # element 5 is a QD (names repeat)
+    window.extra_commands.setText("set ele qf k1 = 0.33; set global n_opti_cycles = 7")
+    assert window.start_button.isEnabled()
+    assert "-noinit" in window.command_label.text()
+    assert "set ele qf k1 = 0.33" in window.command_label.text()
+
+    start(qtbot, gui)
+    assert gui.client.is_running
+    result = {}
+    def query(t):
+        names = list(t.lat_list("*", "ele.name"))
+        return (names[:2], t.data_d2_array(1),
+                t.ele_gen_attribs(f"0>>{names.index('QF')}")["K1"],
+                t.global_optimization()["n_opti_cycles"])
+
+    gui.client.call(query, on_done=lambda r: result.setdefault("r", r),
+                    on_error=lambda msg: result.setdefault("r", msg))
+    qtbot.waitUntil(lambda: "r" in result, timeout=30_000)
+    names, d2, k1, cycles = result["r"]
+    assert names == ["BEGINNING", "QD"]  # branch starts at QD
+    assert d2 == []  # tao.init (which defines data) was not read
+    assert abs(k1 - 0.33) < 1e-12 and cycles == 7  # extra commands ran
+    assert "Tao> set global n_opti_cycles = 7" in gui.console.output.toPlainText()
+
+
+def test_startup_file_field_follows_run_startup(fresh_gui):
+    window = fresh_gui.startup
+    assert window.files["startup_file"].isEnabled()
+    window.checks["run_startup"].setChecked(False)
+    assert not window.files["startup_file"].isEnabled()
+    assert "-nostartup" in window.options_value().tao_args()

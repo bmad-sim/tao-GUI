@@ -1,7 +1,7 @@
 """Startup window: choose the files and options Tao starts with.
 
-Shown alone when ``tao-gui`` is run with no arguments and there is no
-``tao.init`` in the current directory, and again for File > Open.
+Shown alone when ``tao-gui`` is run with no arguments (ready to use a
+``tao.init`` in the current directory, if there is one), and again for File > Open.
 
 Options that the init file can also set are tri-state: Default / On / Off.
 "Default" passes nothing, so Tao uses the init file's setting (its
@@ -14,6 +14,7 @@ the same, but pytao 1.4 drops ``-rf_on`` and every ``--`` switch.)
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -48,9 +49,19 @@ FILE_FIELDS = (
      "Bmad lattice (*.bmad *.lat);;All files (*)", None),
     ("beam_file", "Beam file", "-beam_file", "All files (*)", "beam_file"),
     ("data_file", "Data file", "-data_file", "Tao init (*.init);;All files (*)", "data_file"),
-    ("var_file", "Variable file", "-var_file", "Tao init (*.init);;All files (*)", "var_file"),
     ("startup_file", "Startup file", "-startup_file", "All files (*)", "startup_file"),
     ("plot_file", "Plot file", "-plot_file", "Tao init (*.init);;All files (*)", "plot_file"),
+    # beam_init%position_file is in the tao_beam_init namelist, not tao_start.
+    ("beam_init_position_file", "Beam init position file", "-beam_init_position_file",
+     "All files (*)", None),
+    ("var_file", "Variable file", "-var_file", "Tao init (*.init);;All files (*)", "var_file"),
+    ("building_wall_file", "Building wall file", "-building_wall_file", "All files (*)",
+     "building_wall_file"),
+)
+# Layout of the other input files: two columns, side by side row for row.
+FILE_COLUMNS = (
+    ("beam_file", "data_file", "startup_file", "plot_file"),
+    ("beam_init_position_file", "var_file", "building_wall_file"),
 )
 
 
@@ -92,8 +103,24 @@ _PLOT_GLOBAL = "plot_on"
 
 # (field, label, Tao flag when unchecked, Tao flag when checked, tooltip)
 CHECK_OPTIONS = (
-    ("run_startup", "Run startup file", "-nostartup", None, "Run the Tao startup command file"),
+    ("use_init", "Use init file", "-noinit", None,
+     "Read a Tao init file (unchecked: none is read, even a tao.init in the working "
+     "directory; a lattice file is then required)"),
+    ("run_startup", "Run startup file", "-nostartup", None,
+     "Run the Tao startup command file (unchecked: none is run, even one in the working "
+     "directory)"),
+    ("reverse", "Reverse lattice", None, "-reverse",
+     "Reverse the order of the lattice elements. If the init file also sets "
+     "design_lattice%reverse_lattice, the two cancel."),
     ("debug", "Debug", None, "-debug", "Tao debug mode"),
+)
+# (field, label, Tao flag, placeholder, tooltip): text options passed as "<flag> <text>".
+TEXT_OPTIONS = (
+    ("slice_lattice", "Slice lattice", "-slice_lattice", "Element list, e.g. q1:q35",
+     "Keep only these elements of the lattice (overrides design_lattice%slice_lattice)"),
+    ("start_branch_at", "Start branch at", "-start_branch_at", "Element, e.g. ip_l0",
+     "Shift the start of the branch to this element, keeping the element order "
+     "(overrides design_lattice%start_branch_at)"),
 )
 
 
@@ -160,13 +187,20 @@ class StartupOptions:
     var_file: str = ""
     startup_file: str = ""
     plot_file: str = ""
+    beam_init_position_file: str = ""
+    building_wall_file: str = ""
     # Tri-state: None = not set (init file / Tao default), True = on, False = off.
     plotting: Optional[bool] = None
     rad_int: Optional[bool] = None
     smooth_line_calc: Optional[bool] = None
     rf_on: Optional[bool] = None
+    use_init: bool = True
     run_startup: bool = True
+    reverse: bool = False
     debug: bool = False
+    slice_lattice: str = ""
+    start_branch_at: str = ""
+    extra_commands: str = ""  # run after startup, separated by ";"
     extra_args: str = ""
 
     # -- Tao command line ------------------------------------------------
@@ -179,8 +213,9 @@ class StartupOptions:
             args += ["-init_file", "tao.init"]
         for name, _label, flag, _filter, _nml in FILE_FIELDS:
             value = getattr(self, name)
-            if value:
-                args += [flag, self._rel(value)]
+            if not value or not self.field_used(name):
+                continue
+            args += [flag, self._rel(value)]
         for opt in TRI_OPTIONS:
             if opt.off_flag and getattr(self, opt.name) is False:
                 args.append(opt.off_flag)
@@ -188,6 +223,10 @@ class StartupOptions:
             flag = flag_on if getattr(self, name) else flag_off
             if flag:
                 args.append(flag)
+        for name, _label, flag, _placeholder, _tip in TEXT_OPTIONS:
+            value = getattr(self, name).strip()
+            if value:
+                args += [flag, value]
         if self.extra_args.strip():
             args += shlex.split(self.extra_args)
         return args
@@ -196,7 +235,12 @@ class StartupOptions:
         return shlex.join(self.tao_args())
 
     def set_commands(self) -> List[str]:
-        """Tao commands applying the explicit (On/Off) tri-state choices after startup."""
+        """Tao commands run right after startup: the explicit (On/Off) tri-state
+        choices, then the extra commands.
+
+        The extra commands are run by the GUI rather than passed as Tao's -command:
+        Tao runs -command from its own main loop, which pytao does not use.
+        """
         commands = []
         for opt in TRI_OPTIONS:
             value = getattr(self, opt.name)
@@ -204,16 +248,29 @@ class StartupOptions:
                 command = opt.set_command(value)
                 if command:
                     commands.append(command)
-        return commands
+        return commands + self.extra_command_list()
+
+    def extra_command_list(self) -> List[str]:
+        return [c.strip() for c in self.extra_commands.split(";") if c.strip()]
+
+    def field_used(self, name: str) -> bool:
+        """False for a file field that the options switch off (init / startup file)."""
+        if name == "init_file":
+            return self.use_init
+        if name == "startup_file":
+            return self.run_startup
+        return True
 
     # -- Init-file defaults ----------------------------------------------
     def uses_directory_init(self) -> bool:
         """No init or lattice file given: start from tao.init in the working directory."""
-        return (not self.init_file and not self.lattice_file
+        return (self.use_init and not self.init_file and not self.lattice_file
                 and os.path.isfile(self._abs("tao.init")))
 
     def init_path(self) -> Optional[str]:
         """The init file Tao will read: the chosen one, or tao.init in the directory."""
+        if not self.use_init:
+            return None
         if self.init_file:
             return self._abs(self.init_file)
         default = self._abs("tao.init")
@@ -255,14 +312,16 @@ class StartupOptions:
     def problems(self) -> List[str]:
         """Reasons the options can't be used to start Tao (empty if OK)."""
         out = []
-        if not (self.init_file or self.lattice_file or self.uses_directory_init()):
+        if not self.use_init and not self.lattice_file:
+            out.append("Without an init file, choose a lattice file.")
+        elif not (self.init_file or self.lattice_file or self.uses_directory_init()):
             out.append("Choose an init file or a lattice file, or a working directory "
                        "that has a tao.init.")
         if self.directory and not os.path.isdir(self.directory):
             out.append(f"Directory not found: {self.directory}")
         for name, label, _flag, _filter, _nml in FILE_FIELDS:
             value = getattr(self, name)
-            if value and not os.path.isfile(self._abs(value)):
+            if value and self.field_used(name) and not os.path.isfile(self._abs(value)):
                 out.append(f"{label} not found: {value}")
         try:
             shlex.split(self.extra_args)
@@ -272,7 +331,7 @@ class StartupOptions:
 
     def label(self) -> str:
         """Name shown in the Recent list; entries with the same name are duplicates."""
-        main = self.init_file or self.lattice_file or (
+        main = (self.init_file if self.use_init else "") or self.lattice_file or (
             "tao.init" if self.uses_directory_init() else "")
         directory = os.path.normpath(self.directory) if self.directory else ""
         return f"{os.path.basename(main)} — {directory}" if main else directory
@@ -400,7 +459,7 @@ class StartupWindow(QWidget):
         super().__init__(parent, Qt.Window)
         self.setObjectName("startup_window")
         self.setWindowTitle("Start Tao")
-        self.setMinimumWidth(660)
+        self.setMinimumWidth(820)
         self.tao_running = False
         self._accepted = False
 
@@ -424,8 +483,16 @@ class StartupWindow(QWidget):
         hint.setToolTip("Empty file fields below use the init file's setting, shown greyed.")
         hint.setEnabled(False)
         form.addRow("", hint)
-        for name, label, _flag, _filter, _nml in FILE_FIELDS[2:]:
-            form.addRow(f"{label}:", self.files[name])
+
+        # The other input files, in two columns.
+        labels = {name: label for name, label, *_ in FILE_FIELDS}
+        file_grid = QGridLayout()
+        file_grid.setHorizontalSpacing(8)
+        for col, names in enumerate(FILE_COLUMNS):
+            file_grid.setColumnStretch(2 * col + 1, 1)
+            for row, name in enumerate(names):
+                file_grid.addWidget(QLabel(f"{labels[name]}:"), row, 2 * col)
+                file_grid.addWidget(self.files[name], row, 2 * col + 1)
 
         options = QGroupBox("Options")
         options_form = QFormLayout(options)
@@ -464,7 +531,21 @@ class StartupWindow(QWidget):
             check_row.addWidget(box)
         check_row.addStretch(1)
         options_form.addRow(check_row)
-        self.extra_args = QLineEdit(placeholderText="e.g. -start_branch_at ip_l0")
+        self.texts: Dict[str, QLineEdit] = {}
+        for name, label, _flag, placeholder, tip in TEXT_OPTIONS:
+            edit = QLineEdit(placeholderText=placeholder)
+            edit.setToolTip(tip)
+            edit.textChanged.connect(self._update)
+            self.texts[name] = edit
+            options_form.addRow(f"{label}:", edit)
+        self.extra_commands = QLineEdit(
+            placeholderText="Tao commands run after startup, separated by \";\"")
+        self.extra_commands.setToolTip(
+            "Run after Tao starts (after the startup file), e.g. "
+            "\"set global n_opti_cycles = 50; show merit\"")
+        self.extra_commands.textChanged.connect(self._update)
+        options_form.addRow("Extra commands:", self.extra_commands)
+        self.extra_args = QLineEdit(placeholderText="Any other Tao switches, e.g. -quiet")
         self.extra_args.textChanged.connect(self._update)
         options_form.addRow("Extra Tao arguments:", self.extra_args)
 
@@ -484,6 +565,7 @@ class StartupWindow(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addLayout(file_grid)
         layout.addWidget(options)
         layout.addWidget(QLabel("Tao will be started with:"))
         layout.addWidget(self.command_label)
@@ -501,7 +583,10 @@ class StartupWindow(QWidget):
 
     # ------------------------------------------------------------------
     def options_value(self) -> StartupOptions:
-        opts = StartupOptions(directory=self.directory.text(), extra_args=self.extra_args.text())
+        opts = StartupOptions(directory=self.directory.text(), extra_args=self.extra_args.text(),
+                              extra_commands=self.extra_commands.text())
+        for name, edit in self.texts.items():
+            setattr(opts, name, edit.text())
         for name, field_widget in self.files.items():
             setattr(opts, name, field_widget.text())
         for name, combo in self.tri.items():
@@ -518,6 +603,9 @@ class StartupWindow(QWidget):
             combo.set_value(getattr(opts, name))
         for name, box in self.checks.items():
             box.setChecked(getattr(opts, name))
+        for name, edit in self.texts.items():
+            edit.setText(getattr(opts, name))
+        self.extra_commands.setText(opts.extra_commands)
         self.extra_args.setText(opts.extra_args)
         self._update()
 
@@ -577,9 +665,13 @@ class StartupWindow(QWidget):
             where = f"{source} sets it {'on' if value else 'off'}" if source != "Tao" else (
                 "the init file doesn't set it, so Tao's default applies")
             self.tri[opt.name].setToolTip(f"{opt.tip}\nDefault: {where}.")
+        # Fields the options switch off (no init file / no startup file).
+        for name, field_widget in self.files.items():
+            field_widget.setEnabled(opts.field_used(name))
         self.files["init_file"].edit.setPlaceholderText(
             "tao.init (in the working directory)"
-            if not opts.lattice_file and os.path.isfile(opts._abs("tao.init")) else "")
+            if opts.use_init and not opts.lattice_file and os.path.isfile(opts._abs("tao.init"))
+            else "")
         for name, _label, _flag, _filter, nml in FILE_FIELDS:
             if nml is None:
                 continue
@@ -591,10 +683,10 @@ class StartupWindow(QWidget):
         if problems:
             self.command_label.setText(f"<i>{problems[0]}</i>")
         else:
-            text = f"<code>tao {opts.tao_command()}</code>"
+            text = f"<code>tao {html.escape(opts.tao_command())}</code>"
             commands = opts.set_commands()
             if commands:
-                text += "<br>then: <code>" + "; ".join(commands) + "</code>"
+                text += "<br>then: <code>" + html.escape("; ".join(commands)) + "</code>"
             self.command_label.setText(text)
         self.start_button.setEnabled(not problems)
 

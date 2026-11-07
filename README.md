@@ -13,9 +13,10 @@ remembered between sessions; Window > Tile Windows lays them out again.
 - **Startup window:** when `tao-gui` is run with no arguments, this is the only
   window that opens. If the current directory has a `tao.init`, it is already set up
   to use it: press Start Tao, or change the files and options first. Choose an
-  init file and/or lattice file, the working directory, and the beam, data, variable,
-  startup and plot files. A working directory that has a `tao.init` is enough on its
-  own. Empty file fields use the init file's setting, which is
+  init file and/or lattice file and the working directory. Below them, in two
+  columns: the beam, data, startup and plot files, and the beam init position,
+  variable and building wall files. A working directory that has a `tao.init` is
+  enough on its own. Empty file fields use the init file's setting, which is
   shown greyed in the field.
   - Options the init file can also set (Plotting, Compute radiation integrals,
     Smooth-line calc, RF on) have three states: **Default**, **On** and **Off**.
@@ -24,8 +25,17 @@ remembered between sessions; Window > Tile Windows lays them out again.
     column shows. Hover over a menu to see whether the init file sets it. On and Off
     override the init file: they are applied with `set global …` right after Tao
     starts.
-  - Run startup file and Debug are plain checkboxes; there is also a field for extra
-    Tao arguments.
+  - Checkboxes:
+    - **Use init file:** unchecked, no init file is read (`-noinit`), not even a
+      `tao.init` in the working directory, and a lattice file is required.
+    - **Run startup file:** unchecked, no startup file is run (`-nostartup`), not
+      even one in the working directory.
+    - **Reverse lattice** (`-reverse`) and **Debug**.
+  - **Slice lattice** and **Start branch at** pass `-slice_lattice` and
+    `-start_branch_at`.
+  - **Extra commands:** Tao commands separated by `;`, run right after startup
+    (after the startup file).
+  - **Extra Tao arguments:** any other switches.
   - The window shows the Tao command line it will use, and keeps a list of recent
     startups. The other windows open once Tao has started; if Tao reports an error,
     the startup window stays open with the message. File > Open brings it back to
