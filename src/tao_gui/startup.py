@@ -271,9 +271,11 @@ class StartupOptions:
         return out
 
     def label(self) -> str:
+        """Name shown in the Recent list; entries with the same name are duplicates."""
         main = self.init_file or self.lattice_file or (
             "tao.init" if self.uses_directory_init() else "")
-        return f"{os.path.basename(main)} — {self.directory}" if main else self.directory
+        directory = os.path.normpath(self.directory) if self.directory else ""
+        return f"{os.path.basename(main)} — {directory}" if main else directory
 
     @classmethod
     def from_dict(cls, data: Dict) -> "StartupOptions":
@@ -299,12 +301,23 @@ def load_recent() -> List[StartupOptions]:
         items = json.loads(raw) if isinstance(raw, str) else []
     except ValueError:
         items = []
-    return [StartupOptions.from_dict(d) for d in items if isinstance(d, dict)]
+    return _unique([StartupOptions.from_dict(d) for d in items if isinstance(d, dict)])
+
+
+def _unique(recent: List[StartupOptions]) -> List[StartupOptions]:
+    """Keep only the first (latest) entry for each name (``label``)."""
+    seen = set()
+    out = []
+    for opts in recent:
+        key = opts.label()
+        if key not in seen:
+            seen.add(key)
+            out.append(opts)
+    return out
 
 
 def save_recent(options: StartupOptions) -> None:
-    recent = [r for r in load_recent() if asdict(r) != asdict(options)]
-    recent.insert(0, options)
+    recent = _unique([options, *load_recent()])
     QSettings().setValue("startup/recent", json.dumps([asdict(r) for r in recent[:MAX_RECENT]]))
 
 
