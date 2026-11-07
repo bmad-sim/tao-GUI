@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from .tao_worker import TaoClient, TaoWorker
 
 LAYOUT_TEMPLATE = "lat_layout"
+CLICK_SLOP = 3  # pixels the mouse may move between press and release in a click
 FLOOR_CLICK_PIXELS = 5  # how near (pixels) a click must be to a thin floor-plan element
 ASPECT_SLACK = 8  # pixels left around a fixed-aspect plot when trimming the window
 # Height of each graph and of the lattice layout strip, relative to each other.
@@ -234,6 +235,8 @@ class PlotPanel(QWidget):
         self.figure = Figure(layout="tight")
         self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.mpl_connect("button_press_event", self._on_click)
+        self.canvas.mpl_connect("button_release_event", self._on_release)
+        self._shift_press: Optional[Tuple[float, float]] = None  # shift-press in pan/zoom mode
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         self.toolbar.setIconSize(QSize(18, 18))
         self.status = QLabel()  # only shown for errors
@@ -459,9 +462,29 @@ class PlotPanel(QWidget):
             self._selection_artists.append(artist)
 
     def _on_click(self, event) -> None:
-        if event.button != 1 or self.toolbar.mode != "":  # not zooming or panning
+        """Mouse press. Without pan/zoom, clicks act at once. In pan or zoom mode the
+        press starts a drag, so only a shift-click is handled, on release (see below)."""
+        if event.button != 1:
             return
         shift = _shift_held(event)
+        if self.toolbar.mode != "":
+            self._shift_press = (event.x, event.y) if shift else None
+            return
+        self._handle_click(event, shift)
+
+    def _on_release(self, event) -> None:
+        """A shift-click (press and release without moving) in pan or zoom mode.
+
+        A shift-drag still pans or zooms and is not treated as a click.
+        """
+        press, self._shift_press = self._shift_press, None
+        if press is None or event.button != 1 or self.toolbar.mode == "":
+            return
+        if abs(event.x - press[0]) > CLICK_SLOP or abs(event.y - press[1]) > CLICK_SLOP:
+            return  # a drag
+        self._handle_click(event, True)
+
+    def _handle_click(self, event, shift: bool) -> None:
         if event.inaxes in self.s_axes and event.xdata is not None:
             self.s_clicked.emit(float(event.xdata), shift and event.inaxes in self._layout_axes)
             return

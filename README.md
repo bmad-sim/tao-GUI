@@ -132,6 +132,10 @@ lat_layout plot) or in a floor plan to also open a window with its attributes.
 They are editable, issuing `set ele`, as in the Lattice window. Shift-clicking other
 plots selects the element without opening a window.
 
+Shift-clicks also work while Pan or Zoom is active. A shift-click there is a press
+and release without moving the mouse. A shift-drag still pans or zooms, and plain
+clicks do nothing in those modes.
+
 ## Install
 
 Get the code first; the install commands below are run from this checkout:
