@@ -508,12 +508,34 @@ def test_floor_plan_shift_click_opens_element_window(gui, qtbot):
     k1 = run_sync(qtbot, gui.client, lambda t: t.ele_gen_attribs(f"0>>{QF}")["K1"])
     assert abs(k1 - 0.32) < 1e-12
 
-    # In zoom mode a shift-click does nothing.
+    # In zoom and pan mode a plain click does nothing, a shift-click still opens the
+    # window, and a shift-drag zooms or pans without opening it.
     element.close()
-    panel.toolbar.zoom()
-    QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos)
-    assert ("ele", f"0>>{QF}") not in gui.parameter_windows
-    panel.toolbar.zoom()
+    key = ("ele", f"0>>{QF}")
+
+    def qf_pos():
+        """QF's position now (the K1 edit and zooming redraw the plot)."""
+        panel.canvas.draw()
+        hits = panel._floor_hits[0]
+        k = [tuple(i) for i in hits.ids].index((0, QF))
+        x, y = hits.ax.transData.transform((hits.p1[k] + hits.p2[k]) / 2)
+        return QPoint(round(x / ratio), round(panel.canvas.height() - y / ratio))
+
+    for start_mode in (panel.toolbar.zoom, panel.toolbar.pan):
+        pos = qf_pos()
+        start_mode()
+        assert panel.toolbar.mode != ""
+        QTest.mouseClick(panel.canvas, Qt.LeftButton, pos=pos)
+        assert key not in gui.parameter_windows
+        QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos)
+        assert key in gui.parameter_windows
+        gui.parameter_windows[key].close()
+        QTest.mousePress(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos)
+        QTest.mouseRelease(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos + QPoint(40, 30))
+        assert key not in gui.parameter_windows  # a drag (it zooms or pans), not a click
+        panel.toolbar.home()
+        start_mode()  # turn the mode off again
+        assert panel.toolbar.mode == ""
 
 
 # ----------------------------------------------------------------------
