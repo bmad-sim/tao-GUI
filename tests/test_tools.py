@@ -238,3 +238,81 @@ def test_show_uses_selected_element(gui, qtbot):
     assert gui.show_widget.args.currentText() == f"0>>{QF}"  # QF's name is not unique
     gui.show_widget.choose("merit")
     assert not gui.show_widget.use_selected.isEnabled()
+
+
+# ----------------------------------------------------------------------
+# Shapes
+
+
+def test_parse_offsets():
+    from tao_gui.shapes_window import parse_offsets
+
+    lines = ['ele_shape(1) =    "fork::*"     "circle"   "red"   0.1  "name"   T  F  1   0.0',
+             'ele_shape(12) =   "q*"          "box"      "blue"  0.3  "none"   T  T  2  -0.25',
+             'Shape label text size scales as:']
+    assert parse_offsets(lines) == {1: 0.0, 12: -0.25}
+
+
+def test_shapes_window_edit_add_move_delete(gui, qtbot):
+    from tao_gui.shapes_window import ShapesWidget
+
+    widget = gui.shapes
+    gui.section_actions["shapes"].trigger()
+    wait_idle(qtbot, gui.client)
+    assert widget.who == "floor_plan"
+    table = widget.table
+
+    def tao_shapes(who):
+        return run_sync(qtbot, gui.client, lambda t: t.shape_list(who))
+
+    n = len(tao_shapes("floor_plan"))
+    assert table.rowCount() == n and n > 0
+    color = ShapesWidget.column("color")
+
+    # Edit a cell -> set floor_plan ele_shape(1) = ...
+    table.item(0, color).setText("green")
+    wait_idle(qtbot, gui.client)
+    assert tao_shapes("floor_plan")[0]["color"] == "green"
+    assert table.item(0, color).text() == "green"
+
+    # Offset is kept (pipe shape_list does not report it)
+    table.item(0, ShapesWidget.column("offset")).setText("0.5")
+    wait_idle(qtbot, gui.client)
+    assert widget.shapes[0].offset == 0.5
+    table.item(0, ShapesWidget.column("draw")).setCheckState(Qt.Unchecked)
+    wait_idle(qtbot, gui.client)
+    first = tao_shapes("floor_plan")[0]
+    assert first["shape_draw"] is False and first["color"] == "green"
+    assert widget.shapes[0].offset == 0.5
+
+    # Add below the first shape
+    table.selectRow(0)
+    widget.new_id.setText("quadrupole::qf")
+    widget.add_shape()
+    wait_idle(qtbot, gui.client)
+    shapes = tao_shapes("floor_plan")
+    assert len(shapes) == n + 1 and shapes[1]["ele_name"] == "quadrupole::qf"
+    assert widget.selected_row() == 1
+
+    # Move it up, then delete it
+    widget.move_shape(-1)
+    wait_idle(qtbot, gui.client)
+    shapes = tao_shapes("floor_plan")
+    assert shapes[0]["ele_name"] == "quadrupole::qf" and shapes[1]["color"] == "green"
+    assert widget.selected_row() == 0
+    assert widget.shapes[1].offset == 0.5  # moved shape keeps its offset
+    widget.delete_shape()
+    wait_idle(qtbot, gui.client)
+    shapes = tao_shapes("floor_plan")
+    assert len(shapes) == n and shapes[0]["color"] == "green"
+
+    # A bad value is reported
+    table.item(0, ShapesWidget.column("shape")).setText("not_a_shape")
+    wait_idle(qtbot, gui.client)
+    assert "Tao rejected" in widget.status.text()
+
+    # The lattice layout has its own list
+    widget.select_drawing("lat_layout")
+    wait_idle(qtbot, gui.client)
+    assert table.rowCount() == len(tao_shapes("lat_layout"))
+    assert widget.shapes[0].color != "green"
