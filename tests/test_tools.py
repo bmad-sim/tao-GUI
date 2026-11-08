@@ -423,3 +423,16 @@ def test_show_result_window(gui, qtbot, tmp_path):
     qtbot.waitUntil(lambda: show.output_command == "show lattice", timeout=10_000)
     assert window.text.toPlainText() == merit != show.output.toPlainText()
     window.close()
+
+
+def test_show_form_leaves_no_blank_space(gui, qtbot):
+    show = gui.show_widget
+    show.window().show()
+    show.show()
+    qtbot.waitUntil(lambda: sum(show.vsplit.sizes()) > 0, timeout=5_000)
+    total = sum(show.vsplit.sizes())
+    show.choose("merit")  # two check boxes: a short form pane
+    small = show.vsplit.sizes()[0]
+    assert small <= show.form.minimumSizeHint().height() + 80
+    show.choose("lattice")  # many options: a taller pane, capped
+    assert small < show.vsplit.sizes()[0] <= total * 2 // 3 + 1

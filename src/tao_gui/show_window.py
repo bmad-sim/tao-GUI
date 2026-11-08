@@ -20,7 +20,7 @@ from __future__ import annotations
 import html
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QDoubleValidator, QFontDatabase
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -525,6 +525,8 @@ class ShowWidget(QWidget):
         right.addWidget(bottom)
         right.setStretchFactor(1, 1)
         right.setSizes([400, 380])
+        self.vsplit = right
+        self.top_pane = top
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.list)
         splitter.addWidget(right)
@@ -624,6 +626,7 @@ class ShowWidget(QWidget):
         self.form_area.setWidget(self.forms[name])
         self.forms[name].show()
         self.use_selected.setVisible(element_fields(SPEC_BY_NAME[name]) > 0)
+        self.fit_form()
         if name in ("graph", "curve"):
             self._load_graphs(name)
 
@@ -662,8 +665,25 @@ class ShowWidget(QWidget):
         self.client.call(lambda t: fetch_graphs(t, templates, kind == "curve"),
                          on_done=done, on_error=lambda _msg: None)
 
+    def fit_form(self) -> None:
+        """Size the form pane to its options, so no blank space is left above the
+        buttons; the output gets the rest (at most 2/3 of the height goes to the form,
+        which scrolls beyond that)."""
+        if self.current not in self.forms:
+            return
+        total = sum(self.vsplit.sizes())
+        if total <= 0:
+            return
+        form = self.forms[self.current]
+        buttons = self.top_pane.layout().itemAt(1).sizeHint().height()
+        spacing = self.top_pane.layout().spacing()
+        needed = form.minimumSizeHint().height() + buttons + spacing + 4
+        top = min(needed, total * 2 // 3)
+        self.vsplit.setSizes([top, total - top])
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        QTimer.singleShot(0, self.fit_form)  # sizes are known once shown
         if self.client.is_running and not self.choices:
             self._reload_choices()
 
