@@ -25,6 +25,7 @@ from .lattice import ElementRow, LatticeWidget
 from .change import ChangeWidget
 from .optimizer import OptimizerWidget
 from .set_window import SetWidget
+from .shapes_window import ShapesWidget
 from .show_window import ShowWidget
 from .single_mode import SingleModeWidget
 from .plots import PlotPanel
@@ -46,6 +47,7 @@ SECTIONS = (
     ("set", "Set", "Ctrl+7"),
     ("single_mode", "Single Mode", "Ctrl+8"),
     ("show", "Show", "Ctrl+9"),
+    ("shapes", "Shapes", None),
 )
 
 
@@ -84,6 +86,7 @@ class TaoGui(QObject):
         self.set_widget = SetWidget(self.client)
         self.single_mode = SingleModeWidget(self.client)
         self.show_widget = ShowWidget(self.client)
+        self.shapes = ShapesWidget(self.client)
         widgets = {
             "console": MainWidget(self.call_box, self.console),
             "lattice": self.lattice,
@@ -94,6 +97,7 @@ class TaoGui(QObject):
             "set": self.set_widget,
             "single_mode": self.single_mode,
             "show": self.show_widget,
+            "shapes": self.shapes,
         }
 
         self._create_actions()
@@ -106,7 +110,8 @@ class TaoGui(QObject):
         # Wiring
         self.console.exit_requested.connect(self.quit)
         for widget in (self.lattice, self.data, self.variables, self.optimizer,
-                       self.change, self.set_widget, self.single_mode, self.show_widget):
+                       self.change, self.set_widget, self.single_mode, self.show_widget,
+                       self.shapes):
             widget.command_output.connect(self._echo_command)
         self.data.details_requested.connect(self.show_parameters)
         self.variables.details_requested.connect(self.show_parameters)
@@ -180,6 +185,8 @@ class TaoGui(QObject):
         plot_menu.addAction(self.act_new_plot)
         plot_menu.addSeparator()
         plot_menu.addActions([self.act_link_zoom, self.act_reset_zoom, self.act_refresh])
+        plot_menu.addSeparator()
+        plot_menu.addAction(self.section_actions["shapes"])
 
         window_menu = bar.addMenu("&Window")
         window_menu.aboutToShow.connect(lambda m=window_menu: self._fill_window_menu(m))

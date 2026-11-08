@@ -80,6 +80,11 @@ remembered between sessions; Window > Tile Windows lays them out again.
   list, add arguments ("Use selected" fills in the selected element), and Show;
   "Update automatically" re-runs it after every change to Tao's state, and Help
   shows Tao's help for the subcommand. Past commands are kept in the list.
+- **Shapes** (Plot > Shapes): the element shapes of the floor plan and lattice
+  layout drawings, in the order Tao matches them (an element is drawn with the first
+  shape whose Ele ID matches; *Multi* lets further matches be drawn too). Edit any cell
+  (Ele ID, shape, color, size, label, draw, multi, line width, offset); add a shape
+  below the selected one, delete one, or move one up or down. Plots redraw at once.
 - **Optimizer:** choose the optimizer and cycles/loops, run it (Tao > Run Optimizer,
   Ctrl+R), and see the merit and the `show merit` table.
 
@@ -228,4 +233,5 @@ The tests start Tao on the small FODO ring in `tests/files` (with two data and t
 | `set_window.py` | Set window (`set` command) |
 | `single_mode.py` | Single Mode window (key-bound variables) |
 | `show_window.py` | Show window (`show` command) |
+| `shapes_window.py` | Shapes window (floor_plan and lat_layout element shapes) |
 | `console.py` | Main window contents: command-file box and Tao console |
