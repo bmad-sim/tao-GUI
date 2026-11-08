@@ -5,11 +5,14 @@ that exclude each other (they set the same thing in Tao) as radio buttons, and
 values and arguments as drop-down lists filled from Tao (elements, data,
 variables, plots, universes, branches, ...) wherever Tao can list them. What
 each subcommand takes is in ``show_options.py``. The command line being built
-is shown above the output. Switches are shown without the leading "-",
-which only marks them on Tao's command line.
+is shown above the output after it runs. Switches are shown without the leading
+"-", which only marks them on Tao's command line. Controls that do not apply are
+hidden ("Use selected" for a subcommand without an element, "Recent" with no
+history, "New window" with no output).
 
 "Update automatically" re-runs the command whenever Tao's state changes, "Help"
-shows Tao's help for the subcommand, and "Recent" re-runs a past command.
+shows Tao's help for the subcommand, "Recent" re-runs a past command, and "New
+window" copies the output into a window of its own (which can be saved to a file).
 """
 
 from __future__ import annotations
@@ -407,6 +410,43 @@ def display_name(switches: str) -> str:
     return " + ".join(w[1:] for w in words)
 
 
+class ResultWindow(QWidget):
+    """A copy of one command's output, in a window of its own."""
+
+    def __init__(self, command: str, text: str, parent=None) -> None:
+        super().__init__(parent, Qt.Window)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.command = command
+        self.setWindowTitle(f"Tao: {command}" if command else "Tao output")
+        self.text = QPlainTextEdit(readOnly=True)
+        self.text.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.text.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.text.setPlainText(text)
+        save = QPushButton("Save As…")
+        save.clicked.connect(self.save_as)
+        label = QLabel(f"<tt>{html.escape(command)}</tt>")
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        head = QHBoxLayout()
+        head.addWidget(label, 1)
+        head.addWidget(save)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addLayout(head)
+        layout.addWidget(self.text, 1)
+        self.resize(820, 520)
+
+    def save_as(self) -> None:
+        name = "_".join(self.command.split()[:2]) or "tao_output"
+        path, _ = QFileDialog.getSaveFileName(self, "Save output", f"{name}.txt",
+                                              "Text files (*.txt);;All files (*)")
+        if path:
+            self.save(path)
+
+    def save(self, path: str) -> None:
+        with open(path, "w") as f:
+            f.write(self.text.toPlainText() + "\n")
+
+
 class ShowWidget(QWidget):
     command_output = Signal(str, list)
 
@@ -450,12 +490,17 @@ class ShowWidget(QWidget):
         line.addWidget(self.use_selected)
         line.addWidget(self.show_button)
         line.addWidget(help_button)
-        self.command_label = QLabel()
-        self.command_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.command_label.setWordWrap(True)
+        self.new_window = QPushButton("New window")
+        self.new_window.setToolTip("Copy this output into a window of its own")
+        self.new_window.clicked.connect(self.open_result_window)
+        self.new_window.hide()  # until there is output
+        self.result_windows: List[ResultWindow] = []
+        self.output_command = ""
         options = QHBoxLayout()
         self.status = QLabel()
+        self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         options.addWidget(self.status, 1)
+        options.addWidget(self.new_window)
         options.addWidget(self.recent)
         options.addWidget(self.auto)
 
@@ -464,7 +509,6 @@ class ShowWidget(QWidget):
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.addWidget(self.form_area, 1)
         top_layout.addLayout(line)
-        top_layout.addWidget(self.command_label)
 
         self.output = QPlainTextEdit(readOnly=True)
         self.output.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
@@ -528,6 +572,18 @@ class ShowWidget(QWidget):
         self.last_command = command
         self._run(command, echo=True)
 
+    def open_result_window(self) -> "ResultWindow":
+        """Copy the current output into a window of its own."""
+        window = ResultWindow(self.output_command, self.output.toPlainText(), self)
+        self.result_windows.append(window)
+        window.destroyed.connect(lambda _obj=None, w=window: self._forget(w))
+        window.show()
+        return window
+
+    def _forget(self, window: "ResultWindow") -> None:
+        if window in self.result_windows:
+            self.result_windows.remove(window)
+
     def show_help(self) -> None:
         self._run(f"help show {self.current}", echo=False)
 
@@ -542,6 +598,8 @@ class ShowWidget(QWidget):
             if command == self.last_command and not echo:
                 self.output.verticalScrollBar().setValue(scroll)  # keep place on auto-update
             self.status.setText(f"<tt>{html.escape(command)}</tt>")
+            self.output_command = command
+            self.new_window.show()
             if echo:
                 self.command_output.emit(command, out)
 
@@ -558,7 +616,6 @@ class ShowWidget(QWidget):
             return
         if name not in self.forms:
             form = SpecForm(SPEC_BY_NAME[name])
-            form.changed.connect(self._update_command)
             self._fill_choices(form)
             self.forms[name] = form
         old = self.form_area.takeWidget()
@@ -566,14 +623,9 @@ class ShowWidget(QWidget):
             old.hide()
         self.form_area.setWidget(self.forms[name])
         self.forms[name].show()
-        self.use_selected.setEnabled(element_fields(SPEC_BY_NAME[name]) > 0)
-        self._update_command()
+        self.use_selected.setVisible(element_fields(SPEC_BY_NAME[name]) > 0)
         if name in ("graph", "curve"):
             self._load_graphs(name)
-
-    def _update_command(self) -> None:
-        if self.current in self.forms:
-            self.command_label.setText(f"<tt>Tao&gt; {html.escape(self.command())}</tt>")
 
     def _fill_choices(self, form: SpecForm) -> None:
         for picker in form.pickers():
@@ -629,6 +681,7 @@ class ShowWidget(QWidget):
         self.recent.addItems(self.history())
         self.recent.setCurrentIndex(-1)
         self.recent.blockSignals(False)
+        self.recent.setVisible(self.recent.count() > 0)
 
     def _remember(self, command: str) -> None:
         history = [command] + [h for h in self.history() if h != command]

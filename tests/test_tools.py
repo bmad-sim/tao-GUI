@@ -290,7 +290,7 @@ def test_show_uses_selected_element(gui, qtbot):
     gui.show_widget.use_selected.click()
     assert gui.show_widget.command() == f"show emittance -element 0>>{QF}"
     gui.show_widget.choose("merit")
-    assert not gui.show_widget.use_selected.isEnabled()
+    assert gui.show_widget.use_selected.isHidden()  # no element to select
 
 
 # ----------------------------------------------------------------------
@@ -403,3 +403,23 @@ def test_show_labels_have_no_dashes(gui):
     # No free-form "More arguments" box: every argument is in the form.
     assert not [e for e in show.findChildren(QLineEdit)
                 if "More" in e.placeholderText()]
+
+
+def test_show_result_window(gui, qtbot, tmp_path):
+    show = gui.show_widget
+    assert show.new_window.isHidden()  # no output yet
+    show.choose("merit")
+    show.run()
+    qtbot.waitUntil(lambda: not show.new_window.isHidden(), timeout=10_000)
+    assert not show.recent.isHidden()  # now there is history
+    window = show.open_result_window()
+    assert window.windowTitle() == "Tao: show merit"
+    assert window.text.toPlainText() == show.output.toPlainText()
+    window.save(str(tmp_path / "merit.txt"))
+    assert (tmp_path / "merit.txt").read_text().strip() == show.output.toPlainText().strip()
+    merit = window.text.toPlainText()
+    show.choose("lattice")
+    show.run()  # the copy keeps its own text
+    qtbot.waitUntil(lambda: show.output_command == "show lattice", timeout=10_000)
+    assert window.text.toPlainText() == merit != show.output.toPlainText()
+    window.close()

@@ -82,10 +82,12 @@ default windows instead; Window > Tile Windows lays them out again.
   list and its options appear: switches as check boxes, switches that exclude each
   other as radio buttons (e.g. model / design / base lattice), and values and
   arguments as drop-down lists filled from Tao (elements, data, variables, plots,
-  graphs, curves, universes, branches). "Use selected" fills in the selected
-  element. The command line is shown as you go (switches appear in
-  the window without Tao's leading "-"). "Update automatically" re-runs it after every change to Tao's state, Help
-  shows Tao's help for the subcommand, and Recent re-runs a past command.
+  graphs, curves, universes, branches). Switches appear without Tao's leading
+  "-". "Use selected" (shown only for subcommands that take an element) fills in
+  the selected element. "Update automatically" re-runs the command after every
+  change to Tao's state, Help shows Tao's help for the subcommand, Recent re-runs a
+  past command, and "New window" copies the output into a window of its own, which
+  can be saved to a text file.
 - **Shapes** (Plot > Shapes): the element shapes of the floor plan and lattice
   layout drawings, in the order Tao matches them (an element is drawn with the first
   shape whose Ele ID matches; *Multi* lets further matches be drawn too). Edit any cell
