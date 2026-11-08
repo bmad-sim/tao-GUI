@@ -29,7 +29,7 @@ from .shapes_window import ShapesWidget
 from .show_window import ShowWidget
 from .single_mode import SingleModeWidget
 from .plots import PlotPanel
-from .startup import StartupOptions, StartupWindow
+from .startup import StartupOptions, StartupWindow, restore_layout
 from .tables import DataWidget, VariablesWidget
 from .tao_worker import TaoClient
 from .windows import PlotWindow, SectionWindow
@@ -337,10 +337,17 @@ class TaoGui(QObject):
         if self.windows_shown:
             return
         self.windows_shown = True
-        restore = self.restore
+        # restore=False (tests) or the startup window's "Restore window layout" off:
+        # start with the default windows and plots, tiled.
+        restore = self.restore and restore_layout()
         settings = QSettings()
         if self.plotting:
-            self._add_default_plots(settings.value("plots/templates") if restore else None)
+            if restore and settings.contains("plots/templates"):
+                # An empty list is kept: plots closed last session stay closed.
+                saved = settings.value("plots/templates") or []
+                self._add_plots([saved] if isinstance(saved, str) else saved)
+            else:
+                self._add_default_plots()
 
         restored = False
         if restore and settings.contains("windows/console/geometry"):
@@ -368,10 +375,11 @@ class TaoGui(QObject):
         # The Main window last, so it starts on top of the others.
         self.windows["console"].show_and_raise()
 
-    def _add_default_plots(self, templates=None) -> None:
-        if isinstance(templates, str):
-            templates = [templates]
-        for template in templates or DEFAULT_TEMPLATES:
+    def _add_default_plots(self) -> None:
+        self._add_plots(DEFAULT_TEMPLATES)
+
+    def _add_plots(self, templates) -> None:
+        for template in templates:
             self.add_plot_window(template)
 
     def set_plotting(self, on: bool) -> None:
