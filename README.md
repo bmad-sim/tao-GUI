@@ -7,8 +7,10 @@ Status: early development.
 
 ## Features
 
-Window positions and the open plots are
-remembered between sessions; Window > Tile Windows lays them out again.
+The open windows and plots, and their positions, are
+remembered between sessions (windows closed when you quit stay closed). Untick
+"Restore window layout from last session" in the startup window to start with the
+default windows instead; Window > Tile Windows lays them out again.
 
 - **Startup window:** when `tao-gui` is run with no arguments, this is the only
   window that opens. If the current directory has a `tao.init`, it is already set up

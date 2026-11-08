@@ -380,6 +380,18 @@ def save_recent(options: StartupOptions) -> None:
     QSettings().setValue("startup/recent", json.dumps([asdict(r) for r in recent[:MAX_RECENT]]))
 
 
+RESTORE_LAYOUT_KEY = "startup/restore_layout"
+
+
+def restore_layout() -> bool:
+    """Whether to reopen the windows (and their places) of the last session."""
+    return QSettings().value(RESTORE_LAYOUT_KEY, True, type=bool)
+
+
+def set_restore_layout(on: bool) -> None:
+    QSettings().setValue(RESTORE_LAYOUT_KEY, bool(on))
+
+
 # ----------------------------------------------------------------------
 # Widgets
 
@@ -562,6 +574,16 @@ class StartupWindow(QWidget):
         self.cancel_button = self.buttons.addButton("Quit", QDialogButtonBox.RejectRole)
         self.start_button.clicked.connect(self._on_start)
         self.cancel_button.clicked.connect(self.close)
+        self.restore_layout = QCheckBox("Restore window layout from last session")
+        self.restore_layout.setToolTip(
+            "Reopen the windows and plots that were open when the GUI last quit, where they were.\n"
+            "Unchecked: start with the default windows and plots, tiled.")
+        self.restore_layout.setChecked(restore_layout())
+        self.restore_layout.toggled.connect(set_restore_layout)
+        button_row = QHBoxLayout()
+        button_row.addWidget(self.restore_layout)
+        button_row.addStretch(1)
+        button_row.addWidget(self.buttons)
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
@@ -570,7 +592,7 @@ class StartupWindow(QWidget):
         layout.addWidget(QLabel("Tao will be started with:"))
         layout.addWidget(self.command_label)
         layout.addWidget(self.message)
-        layout.addWidget(self.buttons)
+        layout.addLayout(button_row)
 
         for f in [self.directory, *self.files.values()]:
             f.changed.connect(self._update)

@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 
-from conftest import wait_idle
+from conftest import FILES, wait_idle
 from tao_gui import plots
 
 N_ELEMENTS = 66  # BEGINNING + 8 cells * 8 elements + END
@@ -607,3 +607,74 @@ def test_layout_shift_click_opens_element_window(gui, qtbot):
     assert panel._layout_axes == [panel.s_axes[0]]
     QTest.mouseClick(panel.canvas, Qt.LeftButton, Qt.ShiftModifier, pos(panel.s_axes[0]))
     assert ("ele", f"0>>{QF}") in gui.parameter_windows
+
+
+# ----------------------------------------------------------------------
+# Restoring the window layout
+
+
+def _visible(app):
+    sections = sorted(k for k, w in app.windows.items() if w.isVisible())
+    plots = [w.panel.template for w in app.plot_windows if w.isVisible()]
+    return sections, plots
+
+
+def _start(qtbot, restore=True):
+    from tao_gui.application import TaoGui
+
+    app = TaoGui(restore=restore)
+    app.launch("-init tao.init")
+    qtbot.waitUntil(lambda: app.client.is_running, timeout=60_000)
+    wait_idle(qtbot, app.client)
+    return app
+
+
+def test_closed_windows_stay_closed_next_session(qtbot, monkeypatch):
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    from tao_gui.startup import set_restore_layout
+
+    QCoreApplication.setOrganizationName("bmad-sim-tests")
+    QCoreApplication.setApplicationName("tao-gui-tests")
+    QSettings().clear()
+    monkeypatch.chdir(FILES)
+
+    app = _start(qtbot)
+    assert _visible(app) == (["console", "lattice"], ["beta", "orbit"])
+    for window in list(app.plot_windows):
+        window.close()  # every plot closed
+    app.windows["lattice"].close()
+    app.show_section("data")
+    app.shutdown()  # saves the layout
+
+    app = _start(qtbot)
+    try:
+        assert _visible(app) == (["console", "data"], [])
+    finally:
+        app.shutdown()
+
+    # "Restore window layout" off: the default windows and plots again
+    set_restore_layout(False)
+    app = _start(qtbot)
+    try:
+        assert _visible(app) == (["console", "lattice"], ["beta", "orbit"])
+    finally:
+        app.shutdown(save=False)
+    QSettings().clear()
+
+
+def test_startup_restore_layout_checkbox(qtbot):
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    from tao_gui.startup import StartupWindow, restore_layout
+
+    QCoreApplication.setOrganizationName("bmad-sim-tests")
+    QCoreApplication.setApplicationName("tao-gui-tests")
+    QSettings().clear()
+    window = StartupWindow()
+    qtbot.addWidget(window)
+    assert window.restore_layout.isChecked() and restore_layout()
+    window.restore_layout.setChecked(False)
+    assert not restore_layout()
+    assert not StartupWindow().restore_layout.isChecked()  # remembered
+    QSettings().clear()
