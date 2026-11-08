@@ -8,11 +8,11 @@ each subcommand takes is in ``show_options.py``. The command line being built
 is shown above the output after it runs. Switches are shown without the leading
 "-", which only marks them on Tao's command line. Controls that do not apply are
 hidden ("Use selected" for a subcommand without an element, "Recent" with no
-history, "New window" with no output).
+history, "Save results" with no output).
 
 "Update automatically" re-runs the command whenever Tao's state changes, "Help"
-shows Tao's help for the subcommand, "Recent" re-runs a past command, and "New
-window" copies the output into a window of its own (which can be saved to a file).
+shows Tao's help for the subcommand, "Recent" re-runs a past command, and "Save
+results" copies the output into a window of its own (which can be saved to a file).
 """
 
 from __future__ import annotations
@@ -137,6 +137,7 @@ class ArgWidget(QWidget):
             layout.addStretch(1)
         elif kind in ("float", "text", "file"):
             self.edit = QLineEdit(placeholderText=arg.placeholder)
+            self.edit.setClearButtonEnabled(True)
             if kind == "float":
                 self.edit.setValidator(QDoubleValidator())
                 self.edit.setMaximumWidth(140)
@@ -153,6 +154,7 @@ class ArgWidget(QWidget):
             self.combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             self.combo.setMinimumContentsLength(14)
             self.combo.lineEdit().setPlaceholderText(arg.placeholder or self._placeholder())
+            self.combo.lineEdit().setClearButtonEnabled(True)
             self.combo.currentTextChanged.connect(self.changed)
             if self.combo.completer() is not None:
                 self.combo.completer().setFilterMode(Qt.MatchContains)
@@ -257,7 +259,7 @@ class SpecForm(QWidget):
                 picker = ArgWidget(flag.arg)
                 picker.setEnabled(False)
                 check.toggled.connect(picker.setEnabled)
-                picker.changed.connect(lambda c=check: c.setChecked(True))
+                picker.changed.connect(lambda c=check, p=picker: p.value() and c.setChecked(True))
                 picker.changed.connect(self.changed)
                 grid.addWidget(check, row + i, 0)
                 grid.addWidget(picker, row + i, 1, 1, FLAG_COLUMNS - 1)
@@ -272,7 +274,7 @@ class SpecForm(QWidget):
         layout.addStretch(1)
 
     def _check(self, flag: Flag) -> QCheckBox:
-        check = QCheckBox(display_name(flag.switch))
+        check = QCheckBox(flag.label or display_name(flag.switch))
         check.setToolTip(flag.tip)
         check.toggled.connect(self.changed)
         return check
@@ -293,7 +295,7 @@ class SpecForm(QWidget):
                 picker = ArgWidget(option.arg)
                 picker.setEnabled(False)
                 radio.toggled.connect(picker.setEnabled)
-                picker.changed.connect(lambda r=radio: r.setChecked(True))
+                picker.changed.connect(lambda r=radio, p=picker: p.value() and r.setChecked(True))
                 picker.changed.connect(self.changed)
                 if col:
                     row, col = row + 1, 0
@@ -350,7 +352,7 @@ class SpecForm(QWidget):
                if not pos.optional and not picker.value()]
         for flag, check, picker in self.flags:
             if check.isChecked() and picker is not None and flag.arg.required and not picker.value():
-                out.append(display_name(flag.switch))
+                out.append(flag.label or display_name(flag.switch))
         for choice, group, pickers in self.choices:
             i = group.checkedId()
             option = choice.options[i]
@@ -365,13 +367,29 @@ class SpecForm(QWidget):
         out += [p for _c, _g, ps in self.choices for p in ps if p is not None]
         return out
 
+    def element_picker(self) -> Optional[ArgWidget]:
+        return next((p for p in self.pickers() if p.arg.kind == "element"), None)
+
     def set_element(self, name: str) -> bool:
         """Put an element in the first element picker (and tick its switch)."""
-        for picker in self.pickers():
-            if picker.arg.kind == "element":
-                picker.set_value(name)
-                return True
-        return False
+        picker = self.element_picker()
+        if picker is None:
+            return False
+        picker.set_value(name)
+        return True
+
+    def clear_element(self) -> None:
+        """Undo set_element: empty the picker and untick its switch."""
+        picker = self.element_picker()
+        if picker is None:
+            return
+        picker.set_value("")
+        for _flag, check, p in self.flags:
+            if p is picker:
+                check.setChecked(False)
+        for choice, group, pickers in self.choices:
+            if picker in pickers:
+                group.button(0).setChecked(True)  # back to Tao's default
 
     # For tests and scripting -----------------------------------------------
     def check(self, switch: str, on: bool = True, value: str = "") -> None:
@@ -470,7 +488,9 @@ class ShowWidget(QWidget):
         self.form_area.setFrameShape(QScrollArea.NoFrame)
 
         self.use_selected = QPushButton("Use selected")
-        self.use_selected.setToolTip("Use the element selected in the Lattice window or a plot")
+        self.use_selected.setCheckable(True)
+        self.use_selected.setToolTip("Use the element selected in the Lattice window or a plot; "
+                                     "click again to take it out")
         self.show_button = QPushButton("Show")
         self.show_button.setDefault(True)
         self.show_button.clicked.connect(self.run)
@@ -490,17 +510,17 @@ class ShowWidget(QWidget):
         line.addWidget(self.use_selected)
         line.addWidget(self.show_button)
         line.addWidget(help_button)
-        self.new_window = QPushButton("New window")
-        self.new_window.setToolTip("Copy this output into a window of its own")
-        self.new_window.clicked.connect(self.open_result_window)
-        self.new_window.hide()  # until there is output
+        self.save_results = QPushButton("Save results")
+        self.save_results.setToolTip("Keep a copy of this output in a window of its own")
+        self.save_results.clicked.connect(self.open_result_window)
+        self.save_results.hide()  # until there is output
         self.result_windows: List[ResultWindow] = []
         self.output_command = ""
         options = QHBoxLayout()
         self.status = QLabel()
         self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         options.addWidget(self.status, 1)
-        options.addWidget(self.new_window)
+        options.addWidget(self.save_results)
         options.addWidget(self.recent)
         options.addWidget(self.auto)
 
@@ -560,6 +580,12 @@ class ShowWidget(QWidget):
     def set_argument(self, text: str) -> None:
         """Fill the element (from the selection)."""
         self.form.set_element(text)
+        self.use_selected.setChecked(True)
+
+    def clear_argument(self) -> None:
+        """Take out the element "Use selected" put in."""
+        self.form.clear_element()
+        self.use_selected.setChecked(False)
 
     def run(self) -> None:
         missing = self.form.missing()
@@ -601,7 +627,7 @@ class ShowWidget(QWidget):
                 self.output.verticalScrollBar().setValue(scroll)  # keep place on auto-update
             self.status.setText(f"<tt>{html.escape(command)}</tt>")
             self.output_command = command
-            self.new_window.show()
+            self.save_results.show()
             if echo:
                 self.command_output.emit(command, out)
 
@@ -626,6 +652,8 @@ class ShowWidget(QWidget):
         self.form_area.setWidget(self.forms[name])
         self.forms[name].show()
         self.use_selected.setVisible(element_fields(SPEC_BY_NAME[name]) > 0)
+        picker = self.form.element_picker()
+        self.use_selected.setChecked(picker is not None and bool(picker.value()))
         self.fit_form()
         if name in ("graph", "curve"):
             self._load_graphs(name)

@@ -289,6 +289,14 @@ def test_show_uses_selected_element(gui, qtbot):
     gui.show_widget.choose("emittance")  # an element switch: fills -element and ticks it
     gui.show_widget.use_selected.click()
     assert gui.show_widget.command() == f"show emittance -element 0>>{QF}"
+    assert gui.show_widget.use_selected.isChecked()
+    gui.show_widget.use_selected.click()  # again: takes it out and unticks -element
+    assert gui.show_widget.command() == "show emittance"
+    assert not gui.show_widget.use_selected.isChecked()
+    gui.show_widget.choose("element")  # still filled from before
+    assert gui.show_widget.use_selected.isChecked()
+    gui.show_widget.use_selected.click()
+    assert gui.show_widget.form.positionals[0][1].value() == ""
     gui.show_widget.choose("merit")
     assert gui.show_widget.use_selected.isHidden()  # no element to select
 
@@ -400,6 +408,9 @@ def test_show_labels_have_no_dashes(gui):
     show.choose("lattice")
     texts = [b.text() for b in show.form.findChildren(QRadioButton)]
     assert "orbit + floor_coords" in texts and "element end" in texts
+    assert "Print 0" in [b.text() for b in show.form.findChildren(QCheckBox)]
+    show.form.check("-0undef")
+    assert show.command() == "show lattice -0undef"
     # No free-form "More arguments" box: every argument is in the form.
     assert not [e for e in show.findChildren(QLineEdit)
                 if "More" in e.placeholderText()]
@@ -407,11 +418,12 @@ def test_show_labels_have_no_dashes(gui):
 
 def test_show_result_window(gui, qtbot, tmp_path):
     show = gui.show_widget
-    assert show.new_window.isHidden()  # no output yet
+    assert show.save_results.isHidden()  # no output yet
     show.choose("merit")
     show.run()
-    qtbot.waitUntil(lambda: not show.new_window.isHidden(), timeout=10_000)
+    qtbot.waitUntil(lambda: not show.save_results.isHidden(), timeout=10_000)
     assert not show.recent.isHidden()  # now there is history
+    assert show.save_results.text() == "Save results"
     window = show.open_result_window()
     assert window.windowTitle() == "Tao: show merit"
     assert window.text.toPlainText() == show.output.toPlainText()

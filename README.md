@@ -84,9 +84,9 @@ default windows instead; Window > Tile Windows lays them out again.
   arguments as drop-down lists filled from Tao (elements, data, variables, plots,
   graphs, curves, universes, branches). Switches appear without Tao's leading
   "-". "Use selected" (shown only for subcommands that take an element) fills in
-  the selected element. "Update automatically" re-runs the command after every
+  the selected element; click it again to take it out. "Update automatically" re-runs the command after every
   change to Tao's state, Help shows Tao's help for the subcommand, Recent re-runs a
-  past command, and "New window" copies the output into a window of its own, which
+  past command, and "Save results" copies the output into a window of its own, which
   can be saved to a text file.
 - **Shapes** (Plot > Shapes): the element shapes of the floor plan and lattice
   layout drawings, in the order Tao matches them (an element is drawn with the first
