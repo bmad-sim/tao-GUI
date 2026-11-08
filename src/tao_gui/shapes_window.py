@@ -6,8 +6,8 @@ shape has "Multi" set, with the further shapes that match). The table lists the
 shapes in that order; every cell can be edited, and the buttons add, delete and
 reorder shapes.
 
-Reading uses ``pipe shape_list`` (plus ``show plot -<drawing>`` for the offset,
-which the pipe command does not report). A whole shape is written with
+Reading uses ``pipe shape_list``. Tao versions with bmad-ecosystem#2259 output the
+offset as a 10th field; for older versions it comes from ``show plot -<drawing>``. A whole shape is written with
 ``set <drawing> ele_shape(<i>) = "<ele_id>" "<shape>" "<color>" <size> "<label>"
 <draw> <multi> <line_width> <offset>``, which keeps every field (``pipe
 shape_set`` would reset the offset). Adding and deleting use ``pipe
@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from html import escape
 from dataclasses import dataclass, replace
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
@@ -116,16 +116,37 @@ def parse_offsets(show_lines: List[str]) -> Dict[int, float]:
     return offsets
 
 
+def parse_shape_list(lines: List[str]) -> Tuple[List[Shape], bool]:
+    """Shapes from raw ``pipe shape_list`` output.
+
+    Returns the shapes and whether every line had the offset (10th field). Older
+    Tao outputs 9 fields; those shapes get offset 0.
+    """
+    def flag(text: str) -> bool:
+        return text.strip().upper().startswith("T")
+
+    shapes, has_offset = [], True
+    for line in lines:
+        fields = line.split(";")
+        if len(fields) < 9:
+            continue
+        offset = 0.0
+        if len(fields) >= 10:
+            offset = float(fields[9])
+        else:
+            has_offset = False
+        shapes.append(Shape(int(fields[0]), fields[1].strip(), fields[2].strip(),
+                            fields[3].strip(), float(fields[4]), fields[5].strip(),
+                            flag(fields[6]), flag(fields[7]), int(fields[8]), offset))
+    return shapes, has_offset
+
+
 def fetch_shapes(tao, who: str) -> List[Shape]:
     """Runs on the worker thread."""
-    offsets = parse_offsets(tao.cmd(f"show plot -{who}", raises=False))
-    shapes = []
-    for row in tao.shape_list(who):
-        i = int(row["shape_index"])
-        shapes.append(Shape(i, row["ele_name"], row["shape"], row["color"],
-                            float(row["shape_size"]), row["type_label"], bool(row["shape_draw"]),
-                            bool(row["multi_shape"]), int(row["line_width"]),
-                            offsets.get(i, 0.0)))
+    shapes, has_offset = parse_shape_list(tao.cmd(f"pipe shape_list {who}"))
+    if not has_offset:  # Tao without the offset in shape_list
+        offsets = parse_offsets(tao.cmd(f"show plot -{who}", raises=False))
+        shapes = [replace(s, offset=offsets.get(s.index, 0.0)) for s in shapes]
     return shapes
 
 
