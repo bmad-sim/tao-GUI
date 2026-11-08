@@ -5,10 +5,14 @@ that exclude each other (they set the same thing in Tao) as radio buttons, and
 values and arguments as drop-down lists filled from Tao (elements, data,
 variables, plots, universes, branches, ...) wherever Tao can list them. What
 each subcommand takes is in ``show_options.py``. The command line being built
-is shown above the output; "More arguments" takes anything else.
+is shown above the output after it runs. Switches are shown without the leading
+"-", which only marks them on Tao's command line. Controls that do not apply are
+hidden ("Use selected" for a subcommand without an element, "Recent" with no
+history, "Save results" with no output).
 
 "Update automatically" re-runs the command whenever Tao's state changes, "Help"
-shows Tao's help for the subcommand, and "Recent" re-runs a past command.
+shows Tao's help for the subcommand, "Recent" re-runs a past command, and "Save
+results" copies the output into a window of its own (which can be saved to a file).
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from __future__ import annotations
 import html
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QDoubleValidator, QFontDatabase
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -133,6 +137,7 @@ class ArgWidget(QWidget):
             layout.addStretch(1)
         elif kind in ("float", "text", "file"):
             self.edit = QLineEdit(placeholderText=arg.placeholder)
+            self.edit.setClearButtonEnabled(True)
             if kind == "float":
                 self.edit.setValidator(QDoubleValidator())
                 self.edit.setMaximumWidth(140)
@@ -149,6 +154,7 @@ class ArgWidget(QWidget):
             self.combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             self.combo.setMinimumContentsLength(14)
             self.combo.lineEdit().setPlaceholderText(arg.placeholder or self._placeholder())
+            self.combo.lineEdit().setClearButtonEnabled(True)
             self.combo.currentTextChanged.connect(self.changed)
             if self.combo.completer() is not None:
                 self.combo.completer().setFilterMode(Qt.MatchContains)
@@ -253,7 +259,7 @@ class SpecForm(QWidget):
                 picker = ArgWidget(flag.arg)
                 picker.setEnabled(False)
                 check.toggled.connect(picker.setEnabled)
-                picker.changed.connect(lambda c=check: c.setChecked(True))
+                picker.changed.connect(lambda c=check, p=picker: p.value() and c.setChecked(True))
                 picker.changed.connect(self.changed)
                 grid.addWidget(check, row + i, 0)
                 grid.addWidget(picker, row + i, 1, 1, FLAG_COLUMNS - 1)
@@ -268,7 +274,7 @@ class SpecForm(QWidget):
         layout.addStretch(1)
 
     def _check(self, flag: Flag) -> QCheckBox:
-        check = QCheckBox(flag.switch)
+        check = QCheckBox(flag.label or display_name(flag.switch))
         check.setToolTip(flag.tip)
         check.toggled.connect(self.changed)
         return check
@@ -281,7 +287,7 @@ class SpecForm(QWidget):
         pickers: List[Optional[ArgWidget]] = []
         row = col = 0
         for i, option in enumerate(choice.options):
-            radio = QRadioButton(option.label)
+            radio = QRadioButton(display_name(option.label))
             radio.setToolTip(option.tip)
             group.addButton(radio, i)
             picker = None
@@ -289,7 +295,7 @@ class SpecForm(QWidget):
                 picker = ArgWidget(option.arg)
                 picker.setEnabled(False)
                 radio.toggled.connect(picker.setEnabled)
-                picker.changed.connect(lambda r=radio: r.setChecked(True))
+                picker.changed.connect(lambda r=radio, p=picker: p.value() and r.setChecked(True))
                 picker.changed.connect(self.changed)
                 if col:
                     row, col = row + 1, 0
@@ -346,12 +352,12 @@ class SpecForm(QWidget):
                if not pos.optional and not picker.value()]
         for flag, check, picker in self.flags:
             if check.isChecked() and picker is not None and flag.arg.required and not picker.value():
-                out.append(flag.switch)
+                out.append(flag.label or display_name(flag.switch))
         for choice, group, pickers in self.choices:
             i = group.checkedId()
             option = choice.options[i]
             if pickers[i] is not None and option.arg.required and not pickers[i].value():
-                out.append(option.label)
+                out.append(display_name(option.label))
         return out
 
     def pickers(self) -> List[ArgWidget]:
@@ -361,13 +367,29 @@ class SpecForm(QWidget):
         out += [p for _c, _g, ps in self.choices for p in ps if p is not None]
         return out
 
+    def element_picker(self) -> Optional[ArgWidget]:
+        return next((p for p in self.pickers() if p.arg.kind == "element"), None)
+
     def set_element(self, name: str) -> bool:
         """Put an element in the first element picker (and tick its switch)."""
-        for picker in self.pickers():
-            if picker.arg.kind == "element":
-                picker.set_value(name)
-                return True
-        return False
+        picker = self.element_picker()
+        if picker is None:
+            return False
+        picker.set_value(name)
+        return True
+
+    def clear_element(self) -> None:
+        """Undo set_element: empty the picker and untick its switch."""
+        picker = self.element_picker()
+        if picker is None:
+            return
+        picker.set_value("")
+        for _flag, check, p in self.flags:
+            if p is picker:
+                check.setChecked(False)
+        for choice, group, pickers in self.choices:
+            if picker in pickers:
+                group.button(0).setChecked(True)  # back to Tao's default
 
     # For tests and scripting -----------------------------------------------
     def check(self, switch: str, on: bool = True, value: str = "") -> None:
@@ -382,7 +404,7 @@ class SpecForm(QWidget):
     def select(self, label: str, value: str = "") -> None:
         for choice, group, pickers in self.choices:
             for i, option in enumerate(choice.options):
-                if option.label == label:
+                if label in (option.label, display_name(option.label)):
                     group.button(i).setChecked(True)
                     if value and pickers[i] is not None:
                         pickers[i].set_value(value)
@@ -395,6 +417,52 @@ class SpecForm(QWidget):
                 picker.set_value(value)
                 return
         raise KeyError(label)
+
+
+def display_name(switches: str) -> str:
+    """"-orbit -floor_coords" -> "orbit + floor_coords": the dash only marks a
+    switch on the command line."""
+    words = switches.split()
+    if not words or not all(w.startswith("-") for w in words):
+        return switches  # a plain label, e.g. "element end"
+    return " + ".join(w[1:] for w in words)
+
+
+class ResultWindow(QWidget):
+    """A copy of one command's output, in a window of its own."""
+
+    def __init__(self, command: str, text: str, parent=None) -> None:
+        super().__init__(parent, Qt.Window)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.command = command
+        self.setWindowTitle(f"Tao: {command}" if command else "Tao output")
+        self.text = QPlainTextEdit(readOnly=True)
+        self.text.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
+        self.text.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.text.setPlainText(text)
+        save = QPushButton("Save As…")
+        save.clicked.connect(self.save_as)
+        label = QLabel(f"<tt>{html.escape(command)}</tt>")
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        head = QHBoxLayout()
+        head.addWidget(label, 1)
+        head.addWidget(save)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addLayout(head)
+        layout.addWidget(self.text, 1)
+        self.resize(820, 520)
+
+    def save_as(self) -> None:
+        name = "_".join(self.command.split()[:2]) or "tao_output"
+        path, _ = QFileDialog.getSaveFileName(self, "Save output", f"{name}.txt",
+                                              "Text files (*.txt);;All files (*)")
+        if path:
+            self.save(path)
+
+    def save(self, path: str) -> None:
+        with open(path, "w") as f:
+            f.write(self.text.toPlainText() + "\n")
 
 
 class ShowWidget(QWidget):
@@ -419,11 +487,10 @@ class ShowWidget(QWidget):
         self.form_area.setWidgetResizable(True)
         self.form_area.setFrameShape(QScrollArea.NoFrame)
 
-        self.more = QLineEdit(placeholderText="More arguments (optional)")
-        self.more.textChanged.connect(self._update_command)
-        self.more.returnPressed.connect(self.run)
         self.use_selected = QPushButton("Use selected")
-        self.use_selected.setToolTip("Use the element selected in the Lattice window or a plot")
+        self.use_selected.setCheckable(True)
+        self.use_selected.setToolTip("Use the element selected in the Lattice window or a plot; "
+                                     "click again to take it out")
         self.show_button = QPushButton("Show")
         self.show_button.setDefault(True)
         self.show_button.clicked.connect(self.run)
@@ -439,16 +506,21 @@ class ShowWidget(QWidget):
         self.recent.activated.connect(lambda i: self.run_command(self.recent.itemText(i)))
 
         line = QHBoxLayout()
-        line.addWidget(self.more, 1)
+        line.addStretch(1)
         line.addWidget(self.use_selected)
         line.addWidget(self.show_button)
         line.addWidget(help_button)
-        self.command_label = QLabel()
-        self.command_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.command_label.setWordWrap(True)
+        self.save_results = QPushButton("Save results")
+        self.save_results.setToolTip("Keep a copy of this output in a window of its own")
+        self.save_results.clicked.connect(self.open_result_window)
+        self.save_results.hide()  # until there is output
+        self.result_windows: List[ResultWindow] = []
+        self.output_command = ""
         options = QHBoxLayout()
         self.status = QLabel()
+        self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         options.addWidget(self.status, 1)
+        options.addWidget(self.save_results)
         options.addWidget(self.recent)
         options.addWidget(self.auto)
 
@@ -457,7 +529,6 @@ class ShowWidget(QWidget):
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.addWidget(self.form_area, 1)
         top_layout.addLayout(line)
-        top_layout.addWidget(self.command_label)
 
         self.output = QPlainTextEdit(readOnly=True)
         self.output.setFont(QFontDatabase.systemFont(QFontDatabase.FixedFont))
@@ -474,6 +545,8 @@ class ShowWidget(QWidget):
         right.addWidget(bottom)
         right.setStretchFactor(1, 1)
         right.setSizes([400, 380])
+        self.vsplit = right
+        self.top_pane = top
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.list)
         splitter.addWidget(right)
@@ -499,17 +572,20 @@ class ShowWidget(QWidget):
         return self.forms[self.current]
 
     def command(self) -> str:
-        words = ["show", self.current] + self.form.arguments()
-        more = self.more.text().strip()
-        return " ".join(words + ([more] if more else []))
+        return " ".join(["show", self.current] + self.form.arguments())
 
     def choose(self, name: str) -> None:
         self.list.setCurrentRow(SUBCOMMANDS.index(name))
 
     def set_argument(self, text: str) -> None:
         """Fill the element (from the selection)."""
-        if not self.form.set_element(text):
-            self.more.setText(text)
+        self.form.set_element(text)
+        self.use_selected.setChecked(True)
+
+    def clear_argument(self) -> None:
+        """Take out the element "Use selected" put in."""
+        self.form.clear_element()
+        self.use_selected.setChecked(False)
 
     def run(self) -> None:
         missing = self.form.missing()
@@ -523,6 +599,18 @@ class ShowWidget(QWidget):
         self._remember(command)
         self.last_command = command
         self._run(command, echo=True)
+
+    def open_result_window(self) -> "ResultWindow":
+        """Copy the current output into a window of its own."""
+        window = ResultWindow(self.output_command, self.output.toPlainText(), self)
+        self.result_windows.append(window)
+        window.destroyed.connect(lambda _obj=None, w=window: self._forget(w))
+        window.show()
+        return window
+
+    def _forget(self, window: "ResultWindow") -> None:
+        if window in self.result_windows:
+            self.result_windows.remove(window)
 
     def show_help(self) -> None:
         self._run(f"help show {self.current}", echo=False)
@@ -538,6 +626,8 @@ class ShowWidget(QWidget):
             if command == self.last_command and not echo:
                 self.output.verticalScrollBar().setValue(scroll)  # keep place on auto-update
             self.status.setText(f"<tt>{html.escape(command)}</tt>")
+            self.output_command = command
+            self.save_results.show()
             if echo:
                 self.command_output.emit(command, out)
 
@@ -554,7 +644,6 @@ class ShowWidget(QWidget):
             return
         if name not in self.forms:
             form = SpecForm(SPEC_BY_NAME[name])
-            form.changed.connect(self._update_command)
             self._fill_choices(form)
             self.forms[name] = form
         old = self.form_area.takeWidget()
@@ -562,14 +651,12 @@ class ShowWidget(QWidget):
             old.hide()
         self.form_area.setWidget(self.forms[name])
         self.forms[name].show()
-        self.use_selected.setEnabled(element_fields(SPEC_BY_NAME[name]) > 0)
-        self._update_command()
+        self.use_selected.setVisible(element_fields(SPEC_BY_NAME[name]) > 0)
+        picker = self.form.element_picker()
+        self.use_selected.setChecked(picker is not None and bool(picker.value()))
+        self.fit_form()
         if name in ("graph", "curve"):
             self._load_graphs(name)
-
-    def _update_command(self) -> None:
-        if self.current in self.forms:
-            self.command_label.setText(f"<tt>Tao&gt; {html.escape(self.command())}</tt>")
 
     def _fill_choices(self, form: SpecForm) -> None:
         for picker in form.pickers():
@@ -606,8 +693,25 @@ class ShowWidget(QWidget):
         self.client.call(lambda t: fetch_graphs(t, templates, kind == "curve"),
                          on_done=done, on_error=lambda _msg: None)
 
+    def fit_form(self) -> None:
+        """Size the form pane to its options, so no blank space is left above the
+        buttons; the output gets the rest (at most 2/3 of the height goes to the form,
+        which scrolls beyond that)."""
+        if self.current not in self.forms:
+            return
+        total = sum(self.vsplit.sizes())
+        if total <= 0:
+            return
+        form = self.forms[self.current]
+        buttons = self.top_pane.layout().itemAt(1).sizeHint().height()
+        spacing = self.top_pane.layout().spacing()
+        needed = form.minimumSizeHint().height() + buttons + spacing + 4
+        top = min(needed, total * 2 // 3)
+        self.vsplit.setSizes([top, total - top])
+
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        QTimer.singleShot(0, self.fit_form)  # sizes are known once shown
         if self.client.is_running and not self.choices:
             self._reload_choices()
 
@@ -625,6 +729,7 @@ class ShowWidget(QWidget):
         self.recent.addItems(self.history())
         self.recent.setCurrentIndex(-1)
         self.recent.blockSignals(False)
+        self.recent.setVisible(self.recent.count() > 0)
 
     def _remember(self, command: str) -> None:
         history = [command] + [h for h in self.history() if h != command]

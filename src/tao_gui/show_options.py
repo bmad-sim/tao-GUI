@@ -33,6 +33,7 @@ class Flag:
     switch: str
     tip: str = ""
     arg: Optional[Arg] = None
+    label: str = ""  # shown instead of the switch name
 
 
 @dataclass(frozen=True)
@@ -225,10 +226,10 @@ SPECS: Tuple[ShowSpec, ...] = (
                               Option("-tracking_elements", "-tracking_elements",
                                      "Only elements in the tracking part"),
                               Option("-lords", "-lords", "Only lord elements"))),
-          Choice("Undefined values", (Option("", "blank"),
-                                      Option("-0undef", "-0undef", "Print undefined as 0"),
-                                      Option("-undef0", "-undef0",
-                                             "Print undefined as 0 using the column format"))),
+          # -0undef and -undef0 both print 0 for undefined values; -0undef right-justifies
+          # it so it can be told from a true zero.
+          Flag("-0undef", "Print 0 instead of dashes for undefined values (right-justified, "
+               "so it can be told from a true zero)", label="Print 0"),
           Flag("-all", "All elements (not just the first 200)"),
           Flag("-no_slaves", "Skip super and multipass slaves"),
           Flag("-no_super_slaves", "Skip super slaves"),

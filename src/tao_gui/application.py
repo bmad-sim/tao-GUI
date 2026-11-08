@@ -570,9 +570,13 @@ class TaoGui(QObject):
         else:
             self.change.set_element(ele)
 
-    def _show_selected_element(self) -> None:
+    def _show_selected_element(self, checked: bool = True) -> None:
+        if not checked:  # clicked again: take the element out
+            self.show_widget.clear_argument()
+            return
         ele = self._selected_element_id()
         if ele is None:
+            self.show_widget.use_selected.setChecked(False)
             self.show_widget.status.setText("<i>Select an element in the Lattice window or a plot</i>")
         else:
             self.show_widget.set_argument(ele)
