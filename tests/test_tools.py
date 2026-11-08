@@ -200,18 +200,31 @@ def test_single_mode_buttons_and_keys(gui, qtbot):
 def test_show_window(gui, qtbot):
     show = gui.show_widget
     gui.section_actions["show"].trigger()
+    wait_idle(qtbot, gui.client)
     assert gui.windows["show"].isVisible()
     assert show.list.count() == 49 and show.current == "element"
 
-    show.set_argument("qf")
+    form = show.form
+    form.set_positional("Element", "qf")
+    form.check("-floor_coords")
+    form.select("design")  # radio: model / design / base
+    assert show.command() == "show element -design -floor_coords qf"
     show.run()
     wait_idle(qtbot, gui.client)
     assert "Quadrupole" in show.output.toPlainText()
-    assert "Tao> show element qf" in gui.console.output.toPlainText()
-    assert show.history()[0] == "element qf"
+    assert "Tao> show element -design -floor_coords qf" in gui.console.output.toPlainText()
+    assert show.history()[0] == "show element -design -floor_coords qf"
+
+    # Element names come from Tao for the drop-down
+    picker = form.positionals[0][1]
+    assert picker.combo.findText("QF") >= 0
+
+    # Missing required argument: not run
+    show.choose("control")
+    show.run()
+    assert "Fill in" in show.status.text()
 
     show.choose("merit")  # no arguments needed
-    show.set_argument("")
     show.run()
     wait_idle(qtbot, gui.client)
     before = show.output.toPlainText()
@@ -227,15 +240,55 @@ def test_show_window(gui, qtbot):
     wait_idle(qtbot, gui.client)
     assert "show merit" in show.output.toPlainText().lower()
 
-    show._on_history_chosen("element qf")  # picking from the history fills both
-    assert show.current == "element" and show.args.currentText() == "qf"
+    show.run_command(show.history()[-1])  # from "Recent"
+    wait_idle(qtbot, gui.client)
+    assert "Quadrupole" in show.output.toPlainText()
+
+
+def test_show_option_forms(gui, qtbot):
+    """Radio buttons, valued switches and repeated switches build the right command."""
+    show = gui.show_widget
+    gui.section_actions["show"].trigger()
+    wait_idle(qtbot, gui.client)
+
+    show.choose("lattice")
+    form = show.form
+    form.select("-attribute", "k1 l")
+    form.select("-middle")
+    form.check("-branch", value="0")
+    form.set_positional("Elements", "1:3")
+    assert show.command() == "show lattice -attribute k1 -attribute l -middle -branch 0 1:3"
+    show.run()
+    wait_idle(qtbot, gui.client)
+    assert "K1" in show.output.toPlainText().upper()
+
+    show.choose("global")
+    show.form.select("-bmad_com")
+    assert show.command() == "show global -bmad_com"
+    show.choose("track")
+    show.form.check("-position", value="no")  # optional value
+    show.form.check("-s")
+    assert show.command() == "show track -s -position no"  # blank optional value first
+
+    show.choose("data")  # d2 and d1 names in the drop-down
+    picker = show.form.positionals[0][1]
+    assert picker.combo.findText("twiss.beta") >= 0
+
+    show.choose("curve")
+    wait_idle(qtbot, gui.client)
+    curves = show.form.positionals[0][1]
+    qtbot.waitUntil(lambda: curves.combo.count() > 0, timeout=10_000)
+    assert any(curves.combo.itemText(i).count(".") == 2 for i in range(curves.combo.count()))
 
 
 def test_show_uses_selected_element(gui, qtbot):
     gui._set_selected(gui.lattice.row_for(QF))
     gui.show_widget.choose("element")
     gui.show_widget.use_selected.click()
-    assert gui.show_widget.args.currentText() == f"0>>{QF}"  # QF's name is not unique
+    assert gui.show_widget.form.positionals[0][1].value() == f"0>>{QF}"  # QF's name is not unique
+    gui.show_widget.choose("emittance")  # an element switch: fills -element and ticks it
+    gui.show_widget.use_selected.click()
+    assert gui.show_widget.command() == f"show emittance -element 0>>{QF}"
     gui.show_widget.choose("merit")
     assert not gui.show_widget.use_selected.isEnabled()
 
