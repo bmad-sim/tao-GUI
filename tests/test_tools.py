@@ -253,6 +253,24 @@ def test_parse_offsets():
     assert parse_offsets(lines) == {1: 0.0, 12: -0.25}
 
 
+def test_parse_shape_list_with_and_without_offset():
+    from tao_gui.shapes_window import Shape, parse_shape_list
+
+    old = ["1;lcavity::*;xbox;red;   4.0000E+001;none;T;F;1",
+           "2;quadrupole::*;xbox;magenta;   3.0000E+001;name;F;T;2"]
+    shapes, has_offset = parse_shape_list(old)
+    assert not has_offset
+    assert shapes == [Shape(1, "lcavity::*", "xbox", "red", 40.0, "none", True, False, 1, 0.0),
+                      Shape(2, "quadrupole::*", "xbox", "magenta", 30.0, "name", False, True, 2, 0.0)]
+
+    new = ["1;lcavity::*;xbox;red;   4.0000E+001;none;T;F;1;0",
+           "2;quadrupole::*;xbox;magenta;   3.0000E+001;name;T;F;1;-0.25"]
+    shapes, has_offset = parse_shape_list(new)
+    assert has_offset
+    assert [s.offset for s in shapes] == [0.0, -0.25]
+    assert shapes[1].ele_id == "quadrupole::*" and shapes[1].size == 30.0
+
+
 def test_shapes_window_edit_add_move_delete(gui, qtbot):
     from tao_gui.shapes_window import ShapesWidget
 
