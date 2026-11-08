@@ -79,9 +79,13 @@ default windows instead; Window > Tile Windows lays them out again.
   the buttons or Tao's keys (1…0 up, q…p down, Shift for ×10; arrows change the bank
   and scale the deltas), scale all deltas, and save and restore values.
 - **Show** (Tao > Show, Ctrl+9): any of Tao's `show` subcommands. Pick one from the
-  list, add arguments ("Use selected" fills in the selected element), and Show;
-  "Update automatically" re-runs it after every change to Tao's state, and Help
-  shows Tao's help for the subcommand. Past commands are kept in the list.
+  list and its options appear: switches as check boxes, switches that exclude each
+  other as radio buttons (e.g. model / design / base lattice), and values and
+  arguments as drop-down lists filled from Tao (elements, data, variables, plots,
+  graphs, curves, universes, branches). "Use selected" fills in the selected
+  element. The command line is shown as you go; "More arguments" takes anything
+  else. "Update automatically" re-runs it after every change to Tao's state, Help
+  shows Tao's help for the subcommand, and Recent re-runs a past command.
 - **Shapes** (Plot > Shapes): the element shapes of the floor plan and lattice
   layout drawings, in the order Tao matches them (an element is drawn with the first
   shape whose Ele ID matches; *Multi* lets further matches be drawn too). Edit any cell
@@ -235,5 +239,6 @@ The tests start Tao on the small FODO ring in `tests/files` (with two data and t
 | `set_window.py` | Set window (`set` command) |
 | `single_mode.py` | Single Mode window (key-bound variables) |
 | `show_window.py` | Show window (`show` command) |
+| `show_options.py` | Switches and arguments of each `show` subcommand |
 | `shapes_window.py` | Shapes window (floor_plan and lat_layout element shapes) |
 | `console.py` | Main window contents: command-file box and Tao console |
