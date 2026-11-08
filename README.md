@@ -83,8 +83,8 @@ default windows instead; Window > Tile Windows lays them out again.
   other as radio buttons (e.g. model / design / base lattice), and values and
   arguments as drop-down lists filled from Tao (elements, data, variables, plots,
   graphs, curves, universes, branches). "Use selected" fills in the selected
-  element. The command line is shown as you go; "More arguments" takes anything
-  else. "Update automatically" re-runs it after every change to Tao's state, Help
+  element. The command line is shown as you go (switches appear in
+  the window without Tao's leading "-"). "Update automatically" re-runs it after every change to Tao's state, Help
   shows Tao's help for the subcommand, and Recent re-runs a past command.
 - **Shapes** (Plot > Shapes): the element shapes of the floor plan and lattice
   layout drawings, in the order Tao matches them (an element is drawn with the first

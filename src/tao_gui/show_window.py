@@ -5,7 +5,8 @@ that exclude each other (they set the same thing in Tao) as radio buttons, and
 values and arguments as drop-down lists filled from Tao (elements, data,
 variables, plots, universes, branches, ...) wherever Tao can list them. What
 each subcommand takes is in ``show_options.py``. The command line being built
-is shown above the output; "More arguments" takes anything else.
+is shown above the output. Switches are shown without the leading "-",
+which only marks them on Tao's command line.
 
 "Update automatically" re-runs the command whenever Tao's state changes, "Help"
 shows Tao's help for the subcommand, and "Recent" re-runs a past command.
@@ -268,7 +269,7 @@ class SpecForm(QWidget):
         layout.addStretch(1)
 
     def _check(self, flag: Flag) -> QCheckBox:
-        check = QCheckBox(flag.switch)
+        check = QCheckBox(display_name(flag.switch))
         check.setToolTip(flag.tip)
         check.toggled.connect(self.changed)
         return check
@@ -281,7 +282,7 @@ class SpecForm(QWidget):
         pickers: List[Optional[ArgWidget]] = []
         row = col = 0
         for i, option in enumerate(choice.options):
-            radio = QRadioButton(option.label)
+            radio = QRadioButton(display_name(option.label))
             radio.setToolTip(option.tip)
             group.addButton(radio, i)
             picker = None
@@ -346,12 +347,12 @@ class SpecForm(QWidget):
                if not pos.optional and not picker.value()]
         for flag, check, picker in self.flags:
             if check.isChecked() and picker is not None and flag.arg.required and not picker.value():
-                out.append(flag.switch)
+                out.append(display_name(flag.switch))
         for choice, group, pickers in self.choices:
             i = group.checkedId()
             option = choice.options[i]
             if pickers[i] is not None and option.arg.required and not pickers[i].value():
-                out.append(option.label)
+                out.append(display_name(option.label))
         return out
 
     def pickers(self) -> List[ArgWidget]:
@@ -382,7 +383,7 @@ class SpecForm(QWidget):
     def select(self, label: str, value: str = "") -> None:
         for choice, group, pickers in self.choices:
             for i, option in enumerate(choice.options):
-                if option.label == label:
+                if label in (option.label, display_name(option.label)):
                     group.button(i).setChecked(True)
                     if value and pickers[i] is not None:
                         pickers[i].set_value(value)
@@ -395,6 +396,15 @@ class SpecForm(QWidget):
                 picker.set_value(value)
                 return
         raise KeyError(label)
+
+
+def display_name(switches: str) -> str:
+    """"-orbit -floor_coords" -> "orbit + floor_coords": the dash only marks a
+    switch on the command line."""
+    words = switches.split()
+    if not words or not all(w.startswith("-") for w in words):
+        return switches  # a plain label, e.g. "element end"
+    return " + ".join(w[1:] for w in words)
 
 
 class ShowWidget(QWidget):
@@ -419,9 +429,6 @@ class ShowWidget(QWidget):
         self.form_area.setWidgetResizable(True)
         self.form_area.setFrameShape(QScrollArea.NoFrame)
 
-        self.more = QLineEdit(placeholderText="More arguments (optional)")
-        self.more.textChanged.connect(self._update_command)
-        self.more.returnPressed.connect(self.run)
         self.use_selected = QPushButton("Use selected")
         self.use_selected.setToolTip("Use the element selected in the Lattice window or a plot")
         self.show_button = QPushButton("Show")
@@ -439,7 +446,7 @@ class ShowWidget(QWidget):
         self.recent.activated.connect(lambda i: self.run_command(self.recent.itemText(i)))
 
         line = QHBoxLayout()
-        line.addWidget(self.more, 1)
+        line.addStretch(1)
         line.addWidget(self.use_selected)
         line.addWidget(self.show_button)
         line.addWidget(help_button)
@@ -499,17 +506,14 @@ class ShowWidget(QWidget):
         return self.forms[self.current]
 
     def command(self) -> str:
-        words = ["show", self.current] + self.form.arguments()
-        more = self.more.text().strip()
-        return " ".join(words + ([more] if more else []))
+        return " ".join(["show", self.current] + self.form.arguments())
 
     def choose(self, name: str) -> None:
         self.list.setCurrentRow(SUBCOMMANDS.index(name))
 
     def set_argument(self, text: str) -> None:
         """Fill the element (from the selection)."""
-        if not self.form.set_element(text):
-            self.more.setText(text)
+        self.form.set_element(text)
 
     def run(self) -> None:
         missing = self.form.missing()

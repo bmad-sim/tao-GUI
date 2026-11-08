@@ -387,3 +387,19 @@ def test_shapes_window_edit_add_move_delete(gui, qtbot):
     wait_idle(qtbot, gui.client)
     assert table.rowCount() == len(tao_shapes("lat_layout"))
     assert widget.shapes[0].color != "green"
+
+
+def test_show_labels_have_no_dashes(gui):
+    from PySide6.QtWidgets import QCheckBox, QLineEdit, QRadioButton
+    show = gui.show_widget
+    for name in ("beam", "lattice", "global", "track"):
+        show.choose(name)
+        labels = [b.text() for b in show.form.findChildren(QCheckBox)]
+        labels += [b.text() for b in show.form.findChildren(QRadioButton)]
+        assert labels and not any(t.startswith("-") for t in labels), (name, labels)
+    show.choose("lattice")
+    texts = [b.text() for b in show.form.findChildren(QRadioButton)]
+    assert "orbit + floor_coords" in texts and "element end" in texts
+    # No free-form "More arguments" box: every argument is in the form.
+    assert not [e for e in show.findChildren(QLineEdit)
+                if "More" in e.placeholderText()]
